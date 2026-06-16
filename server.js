@@ -135,7 +135,10 @@ app.delete('/api/requirements/:id', (req, res) => {
 app.get('/api/vendors', (req, res) => {
   try {
     const store = getStore();
-    res.json(store ? [...store.vendors].sort((a,b)=>a.name.localeCompare(b.name)) : dbAll('SELECT * FROM vendors ORDER BY name ASC'));
+    const list = store
+      ? [...store.vendors].sort((a,b) => a.name.localeCompare(b.name))
+      : dbAll('SELECT * FROM vendors ORDER BY name ASC');
+    res.json(list.map(v => ({ ...v, blacklisted: v.blacklisted === true || v.blacklisted === 1 })));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
