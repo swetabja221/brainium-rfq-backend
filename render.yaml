@@ -1,0 +1,29 @@
+# render.yaml — drop this in your backend/ folder
+# Render reads this for automatic deployment configuration
+
+services:
+  - type: web
+    name: brainium-rfq-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: NODE_ENV
+        value: production
+      - key: GMAIL_USER
+        sync: false          # set manually in Render dashboard
+      - key: GMAIL_CLIENT_ID
+        sync: false
+      - key: GMAIL_CLIENT_SECRET
+        sync: false
+      - key: GMAIL_REFRESH_TOKEN
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_EMAIL
+        sync: false
+      - key: GOOGLE_PRIVATE_KEY
+        sync: false
