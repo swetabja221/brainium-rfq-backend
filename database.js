@@ -79,20 +79,21 @@ async function initTurso(client) {
 async function seedTurso(client) {
   const store = { requirements: [], vendors: [], quotations: [] };
   seedData(store);
-  const stmts = [];
+  // Seed vendors
   for (const v of store.vendors) {
-    stmts.push({ sql: 'INSERT OR IGNORE INTO vendors (id,name,company,email,tech,city,type,contact,blacklisted,blacklist_reason) VALUES (?,?,?,?,?,?,?,?,0,?)', args: [v.id,v.name,v.company,v.email,v.tech,v.city,v.type,v.contact,''] });
+    try { await client.execute({ sql: 'INSERT OR IGNORE INTO vendors (id,name,company,email,tech,city,type,contact,blacklisted,blacklist_reason) VALUES (?,?,?,?,?,?,?,?,0,?)', args: [v.id,v.name,v.company,v.email,v.tech,v.city,v.type,v.contact,''] }); } catch(e) {}
   }
+  // Seed requirements
   for (const r of store.requirements) {
-    stmts.push({ sql: 'INSERT OR IGNORE INTO requirements (id,title,client,bdm,tech,type,status,date,description) VALUES (?,?,?,?,?,?,?,?,?)', args: [r.id,r.title,r.client,r.bdm,r.tech,r.type,r.status,r.date,r.description] });
+    try { await client.execute({ sql: 'INSERT OR IGNORE INTO requirements (id,title,client,bdm,tech,type,status,date,description) VALUES (?,?,?,?,?,?,?,?,?)', args: [r.id,r.title,r.client,r.bdm,r.tech,r.type,r.status,r.date,r.description] }); } catch(e) {}
   }
+  // Seed quotations
   for (const q of store.quotations) {
-    stmts.push({ sql: 'INSERT OR IGNORE INTO quotations (id,requirement_id,vendor_name,amount,num_developers,hours,timeline,notes,is_winner) VALUES (?,?,?,?,?,?,?,?,?)', args: [q.id,q.requirement_id,q.vendor_name,q.amount,q.num_developers,q.hours,q.timeline,q.notes,q.is_winner?1:0] });
+    try { await client.execute({ sql: 'INSERT OR IGNORE INTO quotations (id,requirement_id,vendor_name,amount,num_developers,hours,timeline,notes,is_winner) VALUES (?,?,?,?,?,?,?,?,?)', args: [q.id,q.requirement_id,q.vendor_name,q.amount,q.num_developers,q.hours,q.timeline,q.notes,q.is_winner?1:0] }); } catch(e) {}
   }
-  for (const stmt of stmts) {
-    try { await client.execute(stmt); } catch(e) { /* ignore duplicate */ }
-  }
-  console.log(`Seeded Turso: ${store.vendors.length} vendors, ${store.requirements.length} reqs`);
+  const vCount = await client.execute('SELECT COUNT(*) as c FROM vendors');
+  const rCount = await client.execute('SELECT COUNT(*) as c FROM requirements');
+  console.log(`Turso seeded: ${vCount.rows[0].c} vendors, ${rCount.rows[0].c} reqs`);
 }
 
 // ── Public API ─────────────────────────────────────────────
@@ -185,7 +186,8 @@ function seedData(store) {
   const companies = [
     { name:'Santhosh Gupta', company:'Deltacubes.us', email:'santhosh.gupta3@deltacubes.us', tech:'ReactJS, NodeJS, Angular, AWS Lambda, PHP, Laravel', city:'Bengaluru', contact:'9963219974' },
     { name:'Prateek Saluja', company:'RESILIENCESOFT', email:'prateek@resiliencesoft.com', tech:'Core PHP, CodeIgniter, Laravel, Angular JS, MySQL', city:'Bilaspur', contact:'9981424199' },
-    { name:'Ravi', company:'eDelta Enterprise Solutions', email:'ravi@edeltaes.com', tech:'Angular JS, Ionic, AWS, Node.JS, Express.js', city:'Ahmedabad', contact:'9624300546' },
+    { name:'Priya K', company:'Techy Geeks', email:'Priya.k@techygeeksit.com', tech:'VR, AR, Mobile App, 3D Modeling, Game Development, UI/UX', city:'Puducherry', contact:'9488611933' },
+    { name:'Ravi', company:'eDelta Enterprise Solutions', email:'ravi@edeltaes.com', tech:'Angular JS, Angular 2, Ionic, AWS, Node.JS, Express.js', city:'Ahmedabad', contact:'9624300546' },
     { name:'Goutam', company:'Top Talent Hunt', email:'gautam@toptalenthunt.com', tech:'React JS, Bootstrap, CSS, HTML, MySQL, Angular, Node JS', city:'Pune', contact:'9625447855' },
     { name:'Shubham Atre', company:'Sourcebae', email:'info@sourcebae.com', tech:'Angular, PHP, Node.js, Java, Laravel, React JS, React Native, Vue.js, Flutter, Django, .NET, Python', city:'Indore', contact:'6232091754' },
     { name:'Akshay Rathi', company:'TechSierra.in', email:'akshay@techsierra.in', tech:'React.js, Angular, Node.js, PHP (Laravel), AWS, Azure, MySQL, MongoDB, React Native, .NET', city:'Mumbai', contact:'9819783891' },
@@ -208,33 +210,52 @@ function seedData(store) {
     { name:'Tanmoy Mondal', company:'Internal', email:'tanmoy@brainium.com', tech:'React, Node, AI/ML, Python, Full Stack', city:'Kolkata', contact:'' },
   ];
   const freelancers = [
-    { name:'Kaustuv Basak', tech:'Java, Spring Boot, Node.JS, Python, Django, React JS', city:'Bengaluru', contact:'9384852305', email:'kbasak51903@gmail.com' },
-    { name:'Kalyan Saha', tech:'ASP.NET MVC, C#.NET, Angular, React JS, HTML5, MySQL', city:'Kolkata', contact:'9734557385', email:'kalyansaharana@rediffmail.com' },
-    { name:'Prosenjit Ghosh', tech:'Azure Data Factory, Java, Python, Data Warehousing, ETL, Spring Boot', city:'Kolkata', contact:'9831740771', email:'proghosh123@outlook.com' },
+    { name:'Kaustuv Basak', tech:'Java, Spring Boot, Node.JS, Python, Django, React JS, React Native', city:'Bengaluru', contact:'9384852305', email:'kbasak51903@gmail.com' },
+    { name:'Kalyan Saha', tech:'ASP.NET MVC, C#.NET, Angular, React JS, Power Center, HTML5, MySQL', city:'Kolkata', contact:'9734557385', email:'kalyansaharana@rediffmail.com' },
+    { name:'Prosenjit Ghosh', tech:'Azure Data Factory, Java, Python, Data Warehousing, ETL, BI Tools, Spring Boot', city:'Kolkata', contact:'9831740771', email:'proghosh123@outlook.com' },
     { name:'Baljeet Singh', tech:'Java, Spring Boot, Microservices, AWS', city:'Mohali', contact:'8437979305', email:'beetengg@gmail.com' },
     { name:'Hiren Patel', tech:'Java, Spring Boot, AWS, Hibernate, Microservices', city:'Ahmedabad', contact:'9427668282', email:'mca.hiren@gmail.com' },
-    { name:'Dibyendu Rakshit', tech:'Java, Spring Boot, Docker, Kubernetes, Kafka, AWS, MongoDB', city:'Bengaluru', contact:'6361276886', email:'dibyendu.rakshit.83@gmail.com' },
-    { name:'Ashwini Vanjire', tech:'Angular 2, Angular JS, Ionic, Node.js, React JS', city:'Pune', contact:'7083193305', email:'ashwinipatil1321@gmail.com' },
-    { name:'Suraj Rath', tech:'Angular JS, React JS, Javascript, HTML5, CSS3, Typescript, Redux', city:'Bengaluru', contact:'8339828084', email:'surajrath8@gmail.com' },
-    { name:'Adil Khan', tech:'Java, Android, HTML5, React JS, Angular, Bootstrap, Spring Boot, MySQL', city:'Noida', contact:'9873648143', email:'adilkhant0666@gmail.com' },
-    { name:'Amar Pandey', tech:'HTML, CSS, Angular JS, React.Js, Ionic, jQuery, Bootstrap, Oracle', city:'Kolkata', contact:'8274980877', email:'007amarpandey@gmail.com' },
-    { name:'Vikesh Vaghela', tech:'Node.JS, React JS, Angular JS, PHP, MongoDB, MySQL', city:'Surat', contact:'8141879844', email:'vickeyvaghela82@gmail.com' },
+    { name:'Dibyendu Rakshit', tech:'Java, Spring Boot, Docker, Kubernetes, Kafka, Elastic Search, AWS, MongoDB', city:'Bengaluru', contact:'6361276886', email:'dibyendu.rakshit.83@gmail.com' },
+    { name:'Ratnesh Kumar', tech:'Java, Spring Boot, Hibernate, Oracle, Postgres, AWS, Android', city:'Mumbai', contact:'9920831441', email:'ratnesh.mca@gmail.com' },
+    { name:'Raghu Varre', tech:'ASP.Net, ASP.NET MVC, C#, SQL, SSIS, SSRS, Web API, Javascript', city:'Hyderabad', contact:'9985295838', email:'raghu.varre09@gmail.com' },
+    { name:'Nimesh Patel', tech:'ASP.NET MVC, Angular JS, C#.NET, Jquery, Javascript, Angular 2', city:'Ahmedabad', contact:'8320413964', email:'adsgripmarketing@gmail.com' },
+    { name:'Ashwini Vanjire', tech:'Angular 2, Angular JS, Ionic, Angular 12, Node.js, React JS', city:'Pune', contact:'7083193305', email:'ashwinipatil1321@gmail.com' },
+    { name:'Suraj Rath', tech:'Angular JS, Angular 2, React JS, Javascript, HTML5, CSS3, Typescript, Redux', city:'Bengaluru', contact:'8339828084', email:'surajrath8@gmail.com' },
+    { name:'Raj Srivastva', tech:'HTML5, CSS3, Bootstrap, Angular JS, Angular 2, React JS, UI/UX', city:'Delhi', contact:'8826917121', email:'rajglobol@gmail.com' },
+    { name:'Adil Khan', tech:'Java, Android Studio, HTML5, React JS, Angular, Bootstrap, Spring Boot, MySQL, Firebase', city:'Noida', contact:'9873648143', email:'adilkhant0666@gmail.com' },
+    { name:'Amar Pandey', tech:'HTML, CSS, Angular JS, React.Js, Ionic, jQuery, Bootstrap, Oracle, MySQL', city:'Kolkata', contact:'8274980877', email:'007amarpandey@gmail.com' },
+    { name:'Vikesh Vaghela', tech:'Node.JS, React JS, Angular JS, PHP, Codeignitor, Websocket, MongoDB, MySQL', city:'Surat', contact:'8141879844', email:'vickeyvaghela82@gmail.com' },
     { name:'Yash Sanghani', tech:'Python, Full Stack, Javascript, Django', city:'Surat', contact:'7436025170', email:'yashsanghani3110@gmail.com' },
-    { name:'Kaustubh Limbani', tech:'Python, Django, Flask, Javascript, Docker, Pandas', city:'Surat', contact:'9106607272', email:'kplimbani95@gmail.com' },
-    { name:'Ashutosh Yadav', tech:'React JS, HTML5, CSS3, Python, Django, Javascript', city:'Kalyan', contact:'9136345128', email:'ashu.ydv2001@gmail.com' },
-    { name:'Rushabh Navadiya', tech:'Flutter, Android, iOS, Java, Kotlin', city:'Surat', contact:'8866002166', email:'rushabhnavadiya1998@gmail.com' },
+    { name:'Kaustubh Limbani', tech:'Python, Django, Flask, Javascript, HTML, Docker, GIT, Pandas', city:'Surat', contact:'9106607272', email:'kplimbani95@gmail.com' },
+    { name:'Ashutosh Yadav', tech:'React JS, HTML5, CSS3, Bootstrap, Python, Django, Javascript', city:'Kalyan', contact:'9136345128', email:'ashu.ydv2001@gmail.com' },
+    { name:'Guru Patidar', tech:'Android Studio, App Development, Retrofit, REST API, Kotlin, Java', city:'Indore', contact:'6264255700', email:'gurupatidar007@gmail.com' },
+    { name:'Rushabh Navadiya', tech:'Flutter, Android, iOS, Java, Kotlin, Android Studio', city:'Surat', contact:'8866002166', email:'rushabhnavadiya1998@gmail.com' },
+    { name:'Ritik Rathaur', tech:'Android, Kotlin, Android Studio, Java', city:'Noida', contact:'8287225737', email:'ritik89577@gmail.com' },
     { name:'Alpa Bhojani', tech:'Objective-C, Swift, iOS, React Native', city:'Ahmedabad', contact:'8238538383', email:'alpabhojani.kbasystems@gmail.com' },
     { name:'Mayank Kulshrestha', tech:'iOS, Flutter', city:'Ghaziabad', contact:'8447752075', email:'mayank.kuls83@gmail.com' },
-    { name:'Dhananjay Gadekar', tech:'Salesforce, Javascript, CSS, APEX, LWC, SOQL, Flows', city:'Pune', contact:'9373841998', email:'dhananjaygadekar94@gmail.com' },
+    { name:'Dhananjay Gadekar', tech:'Salesforce, Trigger, Javascript, HTML, CSS, APEX, LWC, SOQL, Flows', city:'Pune', contact:'9373841998', email:'dhananjaygadekar94@gmail.com' },
     { name:'Varun Gupta', tech:'Salesforce, Software Testing, JIRA', city:'Ambala', contact:'6283704041', email:'varungupta3603@gmail.com' },
-    { name:'Rajapandi Karuppaiya', tech:'SAP, SAP HANA, Linux', city:'Bangalore', contact:'7010818037', email:'rajapandiking@gmail.com' },
-    { name:'Swapnil Titar', tech:'Automation Testing, Selenium, Cypress, REST API, Jmeter', city:'Pune', contact:'7517386468', email:'swapniltitar03@gmail.com' },
-    { name:'Akhilesh Jain', tech:'MongoDB, Golang, Kafka, Docker, PostgreSQL', city:'Pune', contact:'8796435818', email:'akhileshjain19@gmail.com' },
-    { name:'Arun Kumaar S', tech:'Golang, AWS, Serverless, Python', city:'Bengaluru', contact:'9791601406', email:'arunthuvini@gmail.com' },
-    { name:'Deepansh Tandon', tech:'Next.js, React, JavaScript, Java, SpringBoot, Microservices, PostgreSQL', city:'', contact:'9123090375', email:'Deepansh.tandon@gmail.com' },
-    { name:'Abhishek Kumar Ram', tech:'Python, Machine Learning, Deep Learning, AI, Generative AI, LLMs, Power BI', city:'', contact:'9123082964', email:'' },
+    { name:'Nandhini Arjunan', tech:'Salesforce, Jenkins, Aura, Integration, Service Cloud, Community Cloud', city:'', contact:'6363525614', email:'nandhiniarjunanbusiness@gmail.com' },
+    { name:'Snehal Singh', tech:'SAP Fiori, SAP UI5, SAP ABAP, Power BI', city:'Jabalpur', contact:'8871985050', email:'99snehalsingh1997@gmail.com' },
+    { name:'Rajapandi Karuppaiya', tech:'SAP, SAP HANA 1.0, Linux', city:'Bangalore', contact:'7010818037', email:'rajapandiking@gmail.com' },
+    { name:'Tanupriya Singh', tech:'Unity 3D, C#, JavaScript, MySQL, HTML5, Gaming, Augmented Reality', city:'Noida', contact:'8979830244', email:'tanumjp@gmail.com' },
+    { name:'Swapnil Titar', tech:'Automation Testing, Selenium, Cypress, REST API Testing, Jmeter, Javascript', city:'Pune', contact:'7517386468', email:'swapniltitar03@gmail.com' },
+    { name:'Raghvendra Raghuvanshi', tech:'Core Java, JavaScript, Selenium WebDriver, TestNG, Cucumber BDD, Jenkins, Docker', city:'Noida', contact:'9340217143', email:'raghvendrar015@gmail.com' },
+    { name:'Akhilesh Jain', tech:'MongoDB, Golang, Kafka, Cassandra, Docker, Zookeeper, SQL, PostgreSQL', city:'Pune', contact:'8796435818', email:'akhileshjain19@gmail.com' },
+    { name:'Arun Kumaar S', tech:'Golang, Go, AWS, Serverless, Python, SQL, NoSQL', city:'Bengaluru', contact:'9791601406', email:'arunthuvini@gmail.com' },
+    { name:'Nishant Hiremath', tech:'Golang, PostgreSQL, MongoDB, Git, Microservices', city:'Mumbai', contact:'7738500286', email:'nishire27@gmail.com' },
+    { name:'Provat Das', tech:'PHP, Laravel, HTML, CSS, Node, Vue, Angular', city:'Kolkata', contact:'9832996894', email:'' },
+    { name:'Surajit Datta', tech:'HTML, CSS, JavaScript, React, Redux, Node.js, Express, MongoDB', city:'', contact:'7908216496', email:'bubuldatta91314@gmail.com' },
+    { name:'Ritik Kohar', tech:'Remix, ReactJS, Node JS, Full Stack', city:'', contact:'9306332262', email:'ritikkochar2@gmail.com' },
+    { name:'Deepansh Tandon', tech:'Next.js, React, JavaScript, Java, SpringBoot, Microservices, PostgreSQL, CI/CD, Docker', city:'', contact:'9123090375', email:'Deepansh.tandon@gmail.com' },
+    { name:'Palvin Muthesh', tech:'React Native, Ionic, Flutter, MEAN, MERN, JS Frameworks', city:'Remote', contact:'9629317140', email:'rrabbit2121@gmail.com' },
+    { name:'Abhishek Kumar Ram', tech:'Python, Machine Learning, Deep Learning, AI, Generative AI, LLMs, Power BI, Data Science', city:'', contact:'9123082964', email:'' },
     { name:'Anirban Patra', tech:'Data Science, Machine Learning', city:'', contact:'8159071050', email:'anirbanpatra79@gmail.com' },
+    { name:'Pranav Singhal', tech:'Blockchain, Cloud, Product Management, Visualization', city:'Hyderabad', contact:'8861200127', email:'pranavrox92@gmail.com' },
     { name:'Abhrajyoti Sen', tech:'Blockchain, MERN Stack, Hyperledger Fabric, Python, Go, NodeJS, AWS', city:'Kolkata', contact:'9038928864', email:'abhrajyoti700@gmail.com' },
+    { name:'Umashankar Shaw', tech:'PHP, Laravel, HTML, CSS, Node', city:'Kolkata', contact:'8479805628', email:'' },
+    { name:'Sairam', tech:'Boomi Developer', city:'', contact:'9000488840', email:'' },
+    { name:'Kiran Ahmed', tech:'iOS, Swift, Mobile Development', city:'Gujarat', contact:'', email:'' },
   ];
 
   for (const v of companies) store.vendors.push({ id:uuidv4(), name:v.name, company:v.company, email:v.email||'', tech:v.tech, city:v.city||'', type:v.company==='Internal'?'Internal':'Company', contact:v.contact||'', blacklisted:false, blacklist_reason:'', created_at:new Date().toISOString() });
