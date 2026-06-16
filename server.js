@@ -222,6 +222,52 @@ app.post('/api/send-rfq', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ── USERS / AUTH ──────────────────────────────────────────
+app.get('/api/users', async (req, res) => {
+  try {
+    const rows = await query('SELECT id, name, email, role, active, created_at FROM users ORDER BY name ASC');
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    const { name, email, password, role } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
+    const id = uuidv4();
+    await execute('INSERT INTO users (id,name,email,password,role,active) VALUES (?,?,?,?,?,1)',
+      [id, name||email.split('@')[0], email, password, role||'viewer']);
+    res.json({ id, name, email, role: role||'viewer', active: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/users/:id', async (req, res) => {
+  try {
+    const { name, role, active, password } = req.body;
+    await execute('UPDATE users SET name=COALESCE(?,name), role=COALESCE(?,role), active=COALESCE(?,active), password=COALESCE(?,password) WHERE id=?',
+      [name, role, active !== undefined ? (active ? 1 : 0) : null, password || null, req.params.id]);
+    const rows = await query('SELECT id,name,email,role,active,created_at FROM users WHERE id=?', [req.params.id]);
+    res.json(rows[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    await execute('DELETE FROM users WHERE id=?', [req.params.id]);
+    res.json({ success: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    const rows = await query('SELECT id,name,email,role,active FROM users WHERE email=? AND password=? AND active=1', [email, password]);
+    if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
+    res.json({ user: rows[0] });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── SYNC (stub) ───────────────────────────────────────────
 app.post('/api/sync/sheets', async (req, res) => {
   res.json({ mock: true, message: 'Google Sheets sync not configured' });
