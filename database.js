@@ -31,30 +31,29 @@ function getMemStore() {
 
 // ── Schema ─────────────────────────────────────────────────
 async function initTurso(client) {
-  await client.batch([
-    `CREATE TABLE IF NOT EXISTS requirements (
-      id TEXT PRIMARY KEY, title TEXT NOT NULL, client TEXT, bdm TEXT,
-      tech TEXT, type TEXT, status TEXT DEFAULT 'Pending', date TEXT,
-      description TEXT, created_at TEXT DEFAULT (datetime('now'))
-    )`,
-    `CREATE TABLE IF NOT EXISTS vendors (
-      id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, email TEXT,
-      tech TEXT, city TEXT, type TEXT DEFAULT 'Company', contact TEXT,
-      blacklisted INTEGER DEFAULT 0, blacklist_reason TEXT,
-      blacklisted_at TEXT, created_at TEXT DEFAULT (datetime('now'))
-    )`,
-    `CREATE TABLE IF NOT EXISTS quotations (
-      id TEXT PRIMARY KEY, requirement_id TEXT, vendor_id TEXT,
-      vendor_name TEXT, amount TEXT, num_developers TEXT, hours TEXT,
-      timeline TEXT, notes TEXT, is_winner INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now'))
-    )`,
-    `CREATE TABLE IF NOT EXISTS rfq_emails (
-      id TEXT PRIMARY KEY, requirement_id TEXT, vendor_emails TEXT,
-      subject TEXT, body TEXT, status TEXT, attachment_name TEXT,
-      error_message TEXT, sent_at TEXT DEFAULT (datetime('now'))
-    )`,
-  ], 'write');
+  // Create tables one by one (batch API varies by version)
+  await client.execute(`CREATE TABLE IF NOT EXISTS requirements (
+    id TEXT PRIMARY KEY, title TEXT NOT NULL, client TEXT, bdm TEXT,
+    tech TEXT, type TEXT, status TEXT DEFAULT 'Pending', date TEXT,
+    description TEXT, created_at TEXT DEFAULT (datetime('now'))
+  )`);
+  await client.execute(`CREATE TABLE IF NOT EXISTS vendors (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, email TEXT,
+    tech TEXT, city TEXT, type TEXT DEFAULT 'Company', contact TEXT,
+    blacklisted INTEGER DEFAULT 0, blacklist_reason TEXT,
+    blacklisted_at TEXT, created_at TEXT DEFAULT (datetime('now'))
+  )`);
+  await client.execute(`CREATE TABLE IF NOT EXISTS quotations (
+    id TEXT PRIMARY KEY, requirement_id TEXT, vendor_id TEXT,
+    vendor_name TEXT, amount TEXT, num_developers TEXT, hours TEXT,
+    timeline TEXT, notes TEXT, is_winner INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`);
+  await client.execute(`CREATE TABLE IF NOT EXISTS rfq_emails (
+    id TEXT PRIMARY KEY, requirement_id TEXT, vendor_emails TEXT,
+    subject TEXT, body TEXT, status TEXT, attachment_name TEXT,
+    error_message TEXT, sent_at TEXT DEFAULT (datetime('now'))
+  )`);
 
   // Seed vendors if empty
   const { rows: vRows } = await client.execute('SELECT COUNT(*) as c FROM vendors');
@@ -68,7 +67,9 @@ async function initTurso(client) {
     for (const r of store.requirements) {
       stmts.push({ sql: 'INSERT OR IGNORE INTO requirements (id,title,client,bdm,tech,type,status,date,description) VALUES (?,?,?,?,?,?,?,?,?)', args: [r.id,r.title,r.client,r.bdm,r.tech,r.type,r.status,r.date,r.description] });
     }
-    if (stmts.length) await client.batch(stmts, 'write');
+    for (const stmt of stmts) {
+      try { await client.execute(stmt); } catch(e) { /* ignore duplicate */ }
+    }
     console.log('Requirements synced:', store.requirements.length);
   }
 }
@@ -86,7 +87,9 @@ async function seedTurso(client) {
   for (const q of store.quotations) {
     stmts.push({ sql: 'INSERT OR IGNORE INTO quotations (id,requirement_id,vendor_name,amount,num_developers,hours,timeline,notes,is_winner) VALUES (?,?,?,?,?,?,?,?,?)', args: [q.id,q.requirement_id,q.vendor_name,q.amount,q.num_developers,q.hours,q.timeline,q.notes,q.is_winner?1:0] });
   }
-  if (stmts.length) await client.batch(stmts, 'write');
+  for (const stmt of stmts) {
+    try { await client.execute(stmt); } catch(e) { /* ignore duplicate */ }
+  }
   console.log(`Seeded Turso: ${store.vendors.length} vendors, ${store.requirements.length} reqs`);
 }
 
