@@ -56,9 +56,21 @@ async function initTurso(client) {
     )`,
   ], 'write');
 
-  // Seed if empty
-  const { rows } = await client.execute('SELECT COUNT(*) as c FROM vendors');
-  if (rows[0].c === 0) await seedTurso(client);
+  // Seed vendors if empty
+  const { rows: vRows } = await client.execute('SELECT COUNT(*) as c FROM vendors');
+  if (vRows[0].c === 0) await seedTurso(client);
+  else {
+    // Also seed requirements if empty (handles partial deploys)
+    // Always top-up requirements using INSERT OR IGNORE (safe to re-run)
+    const store = { requirements: [], vendors: [], quotations: [] };
+    seedData(store);
+    const stmts = [];
+    for (const r of store.requirements) {
+      stmts.push({ sql: 'INSERT OR IGNORE INTO requirements (id,title,client,bdm,tech,type,status,date,description) VALUES (?,?,?,?,?,?,?,?,?)', args: [r.id,r.title,r.client,r.bdm,r.tech,r.type,r.status,r.date,r.description] });
+    }
+    if (stmts.length) await client.batch(stmts, 'write');
+    console.log('Requirements synced:', store.requirements.length);
+  }
 }
 
 async function seedTurso(client) {
@@ -224,16 +236,42 @@ function seedData(store) {
   for (const v of freelancers) store.vendors.push({ id:uuidv4(), name:v.name, company:'Freelancer', email:v.email||'', tech:v.tech, city:v.city||'', type:'Freelancer', contact:v.contact||'', blacklisted:false, blacklist_reason:'', created_at:new Date().toISOString() });
 
   const reqs = [
-    { title:'Market Index Project — .NET Redesign', client:'Gaurav', bdm:'Gaurav', tech:'.NET, React, Mobile App', type:'FC', status:'Pending', date:'2025-05-21', description:'Redesign of https://www.marketindex.com.au/ — website + mobile app.' },
-    { title:'Senior Angular Developer (7+ yrs)', client:'Amritendu', bdm:'Amritendu', tech:'Angular 7+', type:'FD', status:'Closed', date:'2025-12-10', description:'7+ yrs Angular developer, budget ₹1.2 LPM, remote.' },
-    { title:'AI/ML Developer', client:'Bikash', bdm:'Bikash', tech:'AI, ML, Python', type:'FD', status:'Closed', date:'2025-06-10', description:'Python AI/ML developer. Budget around 1 Lakh/month.' },
-    { title:'Backend .NET Core + MongoDB (3 positions)', client:'Bikash', bdm:'Bikash', tech:'.NET Core, MongoDB, Vue.js', type:'FD', status:'Pending', date:'2026-04-01', description:'3 Backend devs + 1 Vue.js UI developer. Healthcare domain preferred.' },
-    { title:'Shopify + React — Pivotee', client:'Manojit', bdm:'Manojit', tech:'Shopify, React', type:'FD', status:'Closed', date:'2025-09-04', description:'Full-time Shopify + React developers needed.' },
-    { title:'Python Backend Developer (6-8 yrs)', client:'Azhar', bdm:'Azhar', tech:'Python, Flask, FastAPI, Django, AWS, MongoDB', type:'FD', status:'CV Shared', date:'2025-10-01', description:'6-8 years Python backend. Noida/Pune/Bangalore hybrid.' },
+    { title:'Market Index Project — .NET Redesign', client:'Gaurav', bdm:'Gaurav', tech:'.NET, React, Mobile App', type:'FC', status:'Pending', date:'2025-05-21', description:'Redesign of https://www.marketindex.com.au/ — website + mobile app. Separate quotes for web and app.' },
+    { title:'CS Cart Multi-Vendor — PHP/Smarty Developer', client:'Dave', bdm:'Dave', tech:'PHP, Smarty, CS Cart', type:'FD', status:'CV Shared', date:'2025-05-01', description:'CS Cart Multi-Vendor Ultimate. Developer needed for custom add-on, PHP, Smarty, hooks troubleshooting.' },
+    { title:'Python and AI/ML Developers', client:'Payel', bdm:'Payel', tech:'Python, AI, ML', type:'FD', status:'CV Shared', date:'2025-05-02', description:'Python and AI/ML developers needed for project delivery.' },
+    { title:'.NET Angular — Welspun', client:'Manojit', bdm:'Manojit', tech:'.NET, Angular', type:'FD', status:'CV Shared', date:'2025-05-03', description:'.NET and Angular developers for Welspun client.' },
+    { title:'SAP PP QM Consultant (10+ yrs)', client:'Manojit', bdm:'Manojit', tech:'SAP PP, SAP QM', type:'FD', status:'CV Shared', date:'2025-05-07', description:'SAP PP QM consultant with 10+ years experience. WFH. Budget ₹1,40,000/month.' },
+    { title:'Salesforce DevOps Engineer', client:'Manojit', bdm:'Manojit', tech:'Salesforce, DevOps', type:'FD', status:'CV Shared', date:'2025-05-08', description:'Salesforce DevOps Engineer required.' },
+    { title:'BIM Developer', client:'Manojit', bdm:'Manojit', tech:'BIM, Autodesk', type:'TM', status:'Closed', date:'2025-05-12', description:'BIM developer needed. Debanjan Pal got selected.' },
+    { title:'GenAI Developer', client:'Manojit', bdm:'Manojit', tech:'GenAI, Python, LLM', type:'TM', status:'CV Shared', date:'2025-05-14', description:'Generative AI developer for project work.' },
+    { title:'AI-powered Sponsorship Platform', client:'Monojit', bdm:'Monojit', tech:'AI, Full Stack', type:'FC', status:'Estimation given', date:'2025-05-17', description:'AI-powered sponsorship platform development.' },
+    { title:'Odoo Developer — Kolkata', client:'Bikash', bdm:'Bikash', tech:'Odoo, Python', type:'TM', status:'Lost', date:'2025-06-01', description:'Odoo developer needed in Kolkata. Quoted ₹1800/hour.' },
+    { title:'AI/ML Developer', client:'Bikash', bdm:'Bikash', tech:'AI, ML, Python', type:'FD', status:'Closed', date:'2025-06-10', description:'Python AI/ML developer for project delivery. Budget around 1 Lakh/month.' },
+    { title:'Shopify — Golazzo', client:'Monojit', bdm:'Monojit', tech:'Shopify', type:'FC', status:'Closed', date:'2025-06-03', description:'Shopify development for Golazzo client. Quoted ₹800/hour.' },
+    { title:'Python + React Developer', client:'Bikash', bdm:'Bikash', tech:'Python, React', type:'FD', status:'CV Shared', date:'2025-06-06', description:'Python and React developer needed.' },
+    { title:'Salesforce — Onsite USA', client:'Manojit', bdm:'Manojit', tech:'Salesforce', type:'FD', status:'Pending', date:'2025-06-24', description:'Salesforce developer onsite in USA. Green card holders only.' },
+    { title:'ServiceNow — Sukolpo', client:'Bikash', bdm:'Bikash', tech:'ServiceNow', type:'FD', status:'Pending', date:'2025-08-01', description:'ServiceNow resources needed — 5 to 50 resources.' },
+    { title:'Shopify + React — Pivotee', client:'Manojit', bdm:'Manojit', tech:'Shopify, React', type:'FD', status:'Closed', date:'2025-09-04', description:'Full-time Shopify + React developers for Pivotee client.' },
+    { title:'Full Stack Java/React + QA + DevOps', client:'Manojit', bdm:'Manojit', tech:'Java, Spring Boot, React, QA, DevOps', type:'FD', status:'CV Shared', date:'2025-09-09', description:'Full Stack (Java/SpringBoot+React) 2 positions, QA 2 positions, DevOps 1 position. Hyderabad. Immediate.' },
+    { title:'French Speaking Unity Developer', client:'Bikash', bdm:'Bikash', tech:'Unity, C#', type:'FD', status:'CV Shared', date:'2025-09-10', description:'French speaking Unity developer required.' },
+    { title:'Python Backend Developer (6-8 yrs)', client:'Azhar', bdm:'Azhar', tech:'Python, Flask, FastAPI, Django, AWS, MongoDB', type:'FD', status:'CV Shared', date:'2025-10-01', description:'6-8 years Python backend. Flask, FastAPI, Django, Serverless. AWS services. Noida/Pune/Bangalore hybrid.' },
+    { title:'Network Engineer + Tableau + Python', client:'Amritendu', bdm:'Amritendu', tech:'Network, Tableau, Python', type:'FD', status:'CV Shared', date:'2025-10-09', description:'Network Engineer (Cisco, F5, Fortinet), Senior Tableau Developer, Sr. Python Engineer needed.' },
+    { title:'Data Scientist — Networking & Graph', client:'Sweety', bdm:'Sweety', tech:'Data Science, Python, NetworkX, PySpark, Azure', type:'FD', status:'CV Shared', date:'2025-11-24', description:'Data Scientist specializing in network design, graph-based modeling, PySpark on Azure/Databricks.' },
+    { title:'Project/Delivery Manager — PMO', client:'Manojit', bdm:'Manojit', tech:'PMO, Jira, Agile, PRINCE2', type:'FD', status:'CV Shared', date:'2025-12-01', description:'Project/Delivery Manager with IT governance, PMO best practices, Agile delivery, Jira expertise.' },
+    { title:'.NET + Azure Developer', client:'Manojit', bdm:'Manojit', tech:'.NET, Azure', type:'FD', status:'CV Shared', date:'2025-12-02', description:'.NET and Azure developer required.' },
+    { title:'Senior Python Developer — Welspun', client:'Manojit', bdm:'Manojit', tech:'Python, Full Stack', type:'FD', status:'CV Shared', date:'2025-12-03', description:'Senior Python developer for Welspun client.' },
+    { title:'Senior Angular Developer (7+ yrs)', client:'Amritendu', bdm:'Amritendu', tech:'Angular 7+', type:'FD', status:'Closed', date:'2025-12-10', description:'7+ yrs Angular developer, budget ₹1.2 LPM, remote, immediately available.' },
     { title:'Senior AI Engineer (7+ yrs)', client:'Amritendu', bdm:'Amritendu', tech:'AI, ML, Python, LLM', type:'FD', status:'CV Shared', date:'2025-12-11', description:'Senior AI Engineer, 7+ years, budget ₹1.4 LPM, remote.' },
-    { title:'Swift/SwiftUI iOS Developer', client:'Azhar', bdm:'Azhar', tech:'Swift, SwiftUI, UIKit, iOS', type:'FD', status:'CV Shared', date:'2026-02-05', description:'Swift/SwiftUI/UIKit: 5+ years.' },
-    { title:'Full Stack React + .NET Core + SQL', client:'Manojit', bdm:'Manojit', tech:'React, .NET Core, SQL', type:'FD', status:'Pending', date:'2026-02-01', description:'3 Full Stack Developers for Welspun.' },
-    { title:'RPA + Power Automate Developer', client:'Manojit', bdm:'Manojit', tech:'RPA, Power Automate', type:'FD', status:'CV Shared', date:'2026-01-05', description:'RPA profile with Power Automate desktop knowledge.' },
+    { title:'RPA + Power Automate Developer', client:'Manojit', bdm:'Manojit', tech:'RPA, Power Automate', type:'FD', status:'CV Shared', date:'2026-01-05', description:'RPA profile with knowledge in Power Automate desktop. Budget 1.50L.' },
+    { title:'Python + Azure Developer — Ashok Kumar', client:'Manojit', bdm:'Manojit', tech:'Python, Azure', type:'FD', status:'CV Shared', date:'2026-01-10', description:'Python + Azure developer for Ashok Kumar Jalda.' },
+    { title:'Full Stack React + .NET Core + SQL', client:'Manojit', bdm:'Manojit', tech:'React, .NET Core, SQL', type:'FD', status:'Pending', date:'2026-02-01', description:'3 Full Stack Developers — React, .NET Core, and SQL for Welspun.' },
+    { title:'Swift/SwiftUI iOS Developer', client:'Azhar', bdm:'Azhar', tech:'Swift, SwiftUI, UIKit, iOS', type:'FD', status:'CV Shared', date:'2026-02-05', description:'Swift/SwiftUI/UIKit: 5+ years. REST/GraphQL APIs: 2+ years. CI/CD: 2+ years.' },
+    { title:'Shopify Developer', client:'Manojit', bdm:'Manojit', tech:'Shopify', type:'FD', status:'CV Shared', date:'2026-03-01', description:'Shopify developer required.' },
+    { title:'AI Architect (10+ yrs) — RAG/RLHF', client:'Amritendu', bdm:'Amritendu', tech:'AI, RAG, RLHF, Python, AWS, GCP, Azure', type:'FD', status:'CV Shared', date:'2026-03-04', description:'AI Architect 10+ years. RAG, RLHF, Python, AWS, GCP, Azure.' },
+    { title:'AI/ML Engineer — Production Grade', client:'Amritendu', bdm:'Amritendu', tech:'AI, ML, Python, RAG, RLHF, AWS', type:'FD', status:'CV Shared', date:'2026-03-05', description:'AI/ML Engineers for production-grade AI systems. RAG, RLHF, Python-based architectures on AWS.' },
+    { title:'Backend .NET Core + MongoDB (3 positions)', client:'Bikash', bdm:'Bikash', tech:'.NET Core, MongoDB, Vue.js', type:'FD', status:'Pending', date:'2026-04-01', description:'3 Backend devs (3-6 yrs) + 1 Vue.js UI developer. Healthcare domain preferred, 1-3 months.' },
+    { title:'Sukolpo — DevOps + AI', client:'Bikash', bdm:'Bikash', tech:'DevOps, AI', type:'FD', status:'CV Shared', date:'2026-04-02', description:'DevOps + AI developer for Sukolpo project.' },
+    { title:'Prabhat — AI LLM Developer', client:'Bikash', bdm:'Bikash', tech:'AI, LLM, Python', type:'FD', status:'CV Shared', date:'2026-04-03', description:'AI LLM developer needed.' },
   ];
   for (const r of reqs) store.requirements.push({ id:uuidv4(), ...r, created_at:new Date().toISOString() });
 
