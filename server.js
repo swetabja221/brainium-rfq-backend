@@ -322,6 +322,18 @@ app.get('/api/analytics', (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ── EMAIL LOG ─────────────────────────────────────────────
+app.get('/api/email-log', (req, res) => {
+  try {
+    const store = getStore();
+    if (store) {
+      return res.json([...store.rfq_emails].sort((a,b) => new Date(b.sent_at) - new Date(a.sent_at)));
+    }
+    res.json(dbAll('SELECT * FROM rfq_emails ORDER BY sent_at DESC'));
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── BLACKLIST ─────────────────────────────────────────────
 app.patch('/api/vendors/:id/blacklist', (req, res) => {
   try {

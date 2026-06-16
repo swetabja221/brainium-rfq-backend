@@ -230,7 +230,7 @@ function initSchema() {
   db.run(`CREATE TABLE IF NOT EXISTS requirements (id TEXT PRIMARY KEY, title TEXT NOT NULL, client TEXT, bdm TEXT, tech TEXT, type TEXT, status TEXT DEFAULT 'Pending', date TEXT, description TEXT, created_at TEXT DEFAULT (datetime('now')))`);
   db.run(`CREATE TABLE IF NOT EXISTS vendors (id TEXT PRIMARY KEY, name TEXT NOT NULL, company TEXT, email TEXT, tech TEXT, city TEXT, type TEXT DEFAULT 'Company', contact TEXT, created_at TEXT DEFAULT (datetime('now')))`);
   db.run(`CREATE TABLE IF NOT EXISTS quotations (id TEXT PRIMARY KEY, requirement_id TEXT, vendor_id TEXT, vendor_name TEXT, amount TEXT, num_developers TEXT, hours TEXT, timeline TEXT, notes TEXT, is_winner INTEGER DEFAULT 0, created_at TEXT DEFAULT (datetime('now')))`);
-  db.run(`CREATE TABLE IF NOT EXISTS rfq_emails (id TEXT PRIMARY KEY, requirement_id TEXT, vendor_emails TEXT, subject TEXT, body TEXT, sent_at TEXT DEFAULT (datetime('now')), status TEXT)`);
+  db.run(`CREATE TABLE IF NOT EXISTS rfq_emails (id TEXT PRIMARY KEY, requirement_id TEXT, vendor_emails TEXT, subject TEXT, body TEXT, sent_at TEXT DEFAULT (datetime('now')), status TEXT, attachment_name TEXT, error_message TEXT)`);
   const count = db.all('SELECT COUNT(*) as c FROM vendors')[0].c;
   if (count === 0) {
     const mem = createMemoryDb()._store;
