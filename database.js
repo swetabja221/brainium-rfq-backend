@@ -118,8 +118,10 @@ async function init() {
     const rc = await client.execute('SELECT COUNT(*) as c FROM requirements');
     const vendorCount = Number(vc.rows[0].c);
     const reqCount = Number(rc.rows[0].c);
-    console.log(`Current DB: ${vendorCount} vendors, ${reqCount} reqs`);
     // If wrong counts, clean and reseed
+    const qc = await client.execute('SELECT COUNT(*) as c FROM quotations');
+    const quoteCount = Number(qc.rows[0].c);
+    console.log(`Current DB: ${vendorCount} vendors, ${reqCount} reqs, ${quoteCount} quotes`);
     if (vendorCount < 70 || vendorCount > 80 || reqCount > 40 || reqCount < 30) {
       console.log('Counts wrong — cleaning and reseeding...');
       await client.execute('DELETE FROM quotations');
@@ -259,4 +261,36 @@ function seedData(store) {
     { title:'Prabhat — AI LLM Developer', client:'Bikash', bdm:'Bikash', tech:'AI, LLM, Python', type:'FD', status:'CV Shared', date:'2026-04-03', description:'AI LLM developer needed.' },
   ];
   for (const r of reqs) store.requirements.push({ id:uuidv4(), ...r, created_at:new Date().toISOString() });
+
+  // Seed quotations with known winners
+  const mktIdx = store.requirements.find(r => r.title.includes('Market Index'));
+  const angularDev = store.requirements.find(r => r.title.includes('Senior Angular'));
+  const aiml = store.requirements.find(r => r.title.includes('AI/ML Developer'));
+  const bim = store.requirements.find(r => r.title.includes('BIM'));
+  const pivotee = store.requirements.find(r => r.title.includes('Pivotee'));
+  const seniorPython = store.requirements.find(r => r.title.includes('Senior Python'));
+
+  if (mktIdx) {
+    store.quotations.push({ id:uuidv4(), requirement_id:mktIdx.id, vendor_name:'Tanmoy Mondal', amount:'₹27 Lakh', num_developers:'8', hours:'2500 hrs', timeline:'5-6 months', notes:'PM, TL, 2 backend, 2 frontend, 1 mobile, 1 QA', is_winner:false, created_at:new Date().toISOString() });
+    store.quotations.push({ id:uuidv4(), requirement_id:mktIdx.id, vendor_name:'Qloron', amount:'₹25-40 Lakh', num_developers:'4', hours:'—', timeline:'—', notes:'Website ₹25L, Website+App ₹40L', is_winner:false, created_at:new Date().toISOString() });
+    store.quotations.push({ id:uuidv4(), requirement_id:mktIdx.id, vendor_name:'Spiral Technolabs', amount:'Web $14,400 / App $22,000', num_developers:'3', hours:'—', timeline:'—', notes:'Fixed price quote', is_winner:false, created_at:new Date().toISOString() });
+  }
+  if (angularDev) {
+    store.quotations.push({ id:uuidv4(), requirement_id:angularDev.id, vendor_name:'Tanmoy Mondal', amount:'₹1.40 LPM', num_developers:'1', hours:'—', timeline:'Ongoing', notes:'Profile: Proparna, notice 15 days', is_winner:true, created_at:new Date().toISOString() });
+    const r = store.requirements.find(x => x.id === angularDev.id); if (r) r.status = 'Closed';
+  }
+  if (aiml) {
+    store.quotations.push({ id:uuidv4(), requirement_id:aiml.id, vendor_name:'Tanmoy Mondal', amount:'₹4.15 Lakh total', num_developers:'1', hours:'—', timeline:'1 month', notes:'Ridwan — immediate joiner', is_winner:true, created_at:new Date().toISOString() });
+    store.quotations.push({ id:uuidv4(), requirement_id:aiml.id, vendor_name:'Hepmade', amount:'₹1.10 Lakh/month', num_developers:'1', hours:'—', timeline:'—', notes:'Rittika profile', is_winner:false, created_at:new Date().toISOString() });
+  }
+  if (bim) {
+    store.quotations.push({ id:uuidv4(), requirement_id:bim.id, vendor_name:'Tanmoy Mondal', amount:'₹600/hour', num_developers:'1', hours:'—', timeline:'—', notes:'Debanjan Pal selected', is_winner:true, created_at:new Date().toISOString() });
+  }
+  if (pivotee) {
+    store.quotations.push({ id:uuidv4(), requirement_id:pivotee.id, vendor_name:'IT Idol', amount:'₹1 Lakh/month', num_developers:'2', hours:'—', timeline:'Ongoing', notes:'Nilesh, Rohit selected', is_winner:true, created_at:new Date().toISOString() });
+  }
+  if (seniorPython) {
+    store.quotations.push({ id:uuidv4(), requirement_id:seniorPython.id, vendor_name:'Confitech', amount:'₹1 Lakh/month', num_developers:'1', hours:'—', timeline:'—', notes:'Sayan Kumar Das', is_winner:false, created_at:new Date().toISOString() });
+    store.quotations.push({ id:uuidv4(), requirement_id:seniorPython.id, vendor_name:'Tanmoy Mondal', amount:'₹75k/month', num_developers:'1', hours:'—', timeline:'—', notes:'Rahul profile', is_winner:false, created_at:new Date().toISOString() });
+  }
 }
