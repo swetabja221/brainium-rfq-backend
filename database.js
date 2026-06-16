@@ -61,18 +61,40 @@ async function initTurso(client) {
   const { rows: vRows } = await client.execute('SELECT COUNT(*) as c FROM vendors');
   if (vRows[0].c === 0) await seedTurso(client);
   else {
-    // Also seed requirements if empty (handles partial deploys)
-    // Always top-up requirements using INSERT OR IGNORE (safe to re-run)
-    const store = { requirements: [], vendors: [], quotations: [] };
-    seedData(store);
-    const stmts = [];
-    for (const r of store.requirements) {
-      stmts.push({ sql: 'INSERT OR IGNORE INTO requirements (id,title,client,bdm,tech,type,status,date,description) VALUES (?,?,?,?,?,?,?,?,?)', args: [r.id,r.title,r.client,r.bdm,r.tech,r.type,r.status,r.date,r.description] });
+    // Check if requirements and quotations need seeding
+    const { rows: rRows } = await client.execute('SELECT COUNT(*) as c FROM requirements');
+    const { rows: qRows } = await client.execute('SELECT COUNT(*) as c FROM quotations');
+    const reqCount = Number(rRows[0].c);
+    const quoteCount = Number(qRows[0].c);
+    console.log(`DB state: vendors=${Number(vRows[0].c)}, reqs=${reqCount}, quotes=${quoteCount}`);
+
+    if (reqCount < 28 || reqCount > 42) {
+      // Wrong count — clear and reseed requirements only
+      console.log('Requirements count wrong, reseeding...');
+      await client.execute('DELETE FROM quotations');
+      await client.execute('DELETE FROM requirements');
+      await seedTurso(client);
+    } else if (quoteCount < 5) {
+      // Seed quotations only if missing
+      console.log('Seeding quotations...');
+      const store = { requirements: [], vendors: [], quotations: [] };
+      seedData(store);
+      // Map seed req titles to real DB ids
+      const dbReqs = (await client.execute('SELECT id, title FROM requirements')).rows;
+      for (const q of store.quotations) {
+        // find matching req by requirement_id from seed
+        const seedReq = store.requirements.find(r => r.id === q.requirement_id);
+        if (!seedReq) continue;
+        const dbReq = dbReqs.find(r => r.title === seedReq.title);
+        if (!dbReq) continue;
+        try {
+          await client.execute({ sql: 'INSERT OR IGNORE INTO quotations (id,requirement_id,vendor_name,amount,num_developers,hours,timeline,notes,is_winner) VALUES (?,?,?,?,?,?,?,?,?)', args: [q.id, dbReq.id, q.vendor_name, q.amount, q.num_developers, q.hours, q.timeline, q.notes, q.is_winner?1:0] });
+        } catch(e) {}
+      }
+      console.log('Quotations seeded.');
+    } else {
+      console.log('DB looks correct, skipping reseed.');
     }
-    for (const stmt of stmts) {
-      try { await client.execute(stmt); } catch(e) { /* ignore duplicate */ }
-    }
-    console.log('Requirements synced:', store.requirements.length);
   }
 }
 
