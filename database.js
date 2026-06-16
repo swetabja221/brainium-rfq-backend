@@ -262,35 +262,90 @@ function seedData(store) {
   ];
   for (const r of reqs) store.requirements.push({ id:uuidv4(), ...r, created_at:new Date().toISOString() });
 
-  // Seed quotations with known winners
-  const mktIdx = store.requirements.find(r => r.title.includes('Market Index'));
-  const angularDev = store.requirements.find(r => r.title.includes('Senior Angular'));
-  const aiml = store.requirements.find(r => r.title.includes('AI/ML Developer'));
-  const bim = store.requirements.find(r => r.title.includes('BIM'));
-  const pivotee = store.requirements.find(r => r.title.includes('Pivotee'));
-  const seniorPython = store.requirements.find(r => r.title.includes('Senior Python'));
+  // ── QUOTATIONS from real spreadsheet data ──────────────
+  function addQ(titleFragment, vendor, amount, notes, isWinner) {
+    const req = store.requirements.find(r => r.title.toLowerCase().includes(titleFragment.toLowerCase()));
+    if (!req) return;
+    store.quotations.push({ id:uuidv4(), requirement_id:req.id, vendor_name:vendor, amount:amount||'—', num_developers:'1', hours:'—', timeline:'—', notes:notes||'', is_winner:isWinner||false, created_at:new Date().toISOString() });
+    if (isWinner) req.status = 'Closed';
+  }
 
-  if (mktIdx) {
-    store.quotations.push({ id:uuidv4(), requirement_id:mktIdx.id, vendor_name:'Tanmoy Mondal', amount:'₹27 Lakh', num_developers:'8', hours:'2500 hrs', timeline:'5-6 months', notes:'PM, TL, 2 backend, 2 frontend, 1 mobile, 1 QA', is_winner:false, created_at:new Date().toISOString() });
-    store.quotations.push({ id:uuidv4(), requirement_id:mktIdx.id, vendor_name:'Qloron', amount:'₹25-40 Lakh', num_developers:'4', hours:'—', timeline:'—', notes:'Website ₹25L, Website+App ₹40L', is_winner:false, created_at:new Date().toISOString() });
-    store.quotations.push({ id:uuidv4(), requirement_id:mktIdx.id, vendor_name:'Spiral Technolabs', amount:'Web $14,400 / App $22,000', num_developers:'3', hours:'—', timeline:'—', notes:'Fixed price quote', is_winner:false, created_at:new Date().toISOString() });
-  }
-  if (angularDev) {
-    store.quotations.push({ id:uuidv4(), requirement_id:angularDev.id, vendor_name:'Tanmoy Mondal', amount:'₹1.40 LPM', num_developers:'1', hours:'—', timeline:'Ongoing', notes:'Profile: Proparna, notice 15 days', is_winner:true, created_at:new Date().toISOString() });
-    const r = store.requirements.find(x => x.id === angularDev.id); if (r) r.status = 'Closed';
-  }
-  if (aiml) {
-    store.quotations.push({ id:uuidv4(), requirement_id:aiml.id, vendor_name:'Tanmoy Mondal', amount:'₹4.15 Lakh total', num_developers:'1', hours:'—', timeline:'1 month', notes:'Ridwan — immediate joiner', is_winner:true, created_at:new Date().toISOString() });
-    store.quotations.push({ id:uuidv4(), requirement_id:aiml.id, vendor_name:'Hepmade', amount:'₹1.10 Lakh/month', num_developers:'1', hours:'—', timeline:'—', notes:'Rittika profile', is_winner:false, created_at:new Date().toISOString() });
-  }
-  if (bim) {
-    store.quotations.push({ id:uuidv4(), requirement_id:bim.id, vendor_name:'Tanmoy Mondal', amount:'₹600/hour', num_developers:'1', hours:'—', timeline:'—', notes:'Debanjan Pal selected', is_winner:true, created_at:new Date().toISOString() });
-  }
-  if (pivotee) {
-    store.quotations.push({ id:uuidv4(), requirement_id:pivotee.id, vendor_name:'IT Idol', amount:'₹1 Lakh/month', num_developers:'2', hours:'—', timeline:'Ongoing', notes:'Nilesh, Rohit selected', is_winner:true, created_at:new Date().toISOString() });
-  }
-  if (seniorPython) {
-    store.quotations.push({ id:uuidv4(), requirement_id:seniorPython.id, vendor_name:'Confitech', amount:'₹1 Lakh/month', num_developers:'1', hours:'—', timeline:'—', notes:'Sayan Kumar Das', is_winner:false, created_at:new Date().toISOString() });
-    store.quotations.push({ id:uuidv4(), requirement_id:seniorPython.id, vendor_name:'Tanmoy Mondal', amount:'₹75k/month', num_developers:'1', hours:'—', timeline:'—', notes:'Rahul profile', is_winner:false, created_at:new Date().toISOString() });
-  }
+  // Market Index
+  addQ('Market Index', 'Tanmoy Mondal', '₹27 Lakh', '2500 hours, 5-6 months');
+  addQ('Market Index', 'Qloron', '₹25-40 Lakh', 'Website ₹25L, Website+App ₹40L');
+  addQ('Market Index', 'Slatro Innovations', '₹17-20 Lakhs', '');
+  addQ('Market Index', 'Spiral Technolabs', 'Web $14,400 / App $22,000', '');
+  // CS Cart
+  addQ('CS Cart', 'Tanmoy Mondal', '₹90k/month', 'MOHD ZAID');
+  addQ('CS Cart', 'Hepmade', '—', '');
+  addQ('CS Cart', 'Confitech', '—', 'Soumen Laha');
+  // BIM
+  addQ('BIM', 'Tanmoy Mondal', '₹600/hour', 'Debanjan Pal selected', true);
+  // AI/ML Developer
+  addQ('AI/ML Developer', 'Tanmoy Mondal', '₹4.15 Lakh total', 'Ridwan - selected', true);
+  addQ('AI/ML Developer', 'Hepmade', '₹1.10 Lakh/month', 'Rittika - CV not selected');
+  // Senior Angular
+  addQ('Senior Angular', 'Tanmoy Mondal', '₹1.40 LPM', 'Proparna, notice 15 days', true);
+  // Senior AI Engineer
+  addQ('Senior AI Engineer', 'Tanmoy Mondal', '₹1.90 LPM', 'Mrigank');
+  // Senior Python Welspun
+  addQ('Senior Python Developer', 'Tanmoy Mondal', '₹75k/month', 'Rahul profile');
+  addQ('Senior Python Developer', 'Raghav', '₹1.30 LPM', 'Rajwinder');
+  addQ('Senior Python Developer', 'Confitech', '₹1 Lakh/month', 'Sayan Kumar Das');
+  // .NET Azure
+  addQ('.NET + Azure', 'Tanmoy Mondal', '₹1.20 LPM', 'Anil');
+  addQ('.NET + Azure', 'Raghav', '₹1.70 LPM', 'Nitesh');
+  // PMO
+  addQ('Project/Delivery Manager', 'Tanmoy Mondal', '—', 'Sukanto + Vijay');
+  addQ('Project/Delivery Manager', 'Raghav', '₹1.50 LPM', 'Anuradha');
+  // Shopify Golazzo
+  addQ('Golazzo', 'Tanmoy Mondal', '₹35k', '', true);
+  addQ('Golazzo', 'Hepmade', '—', "Couldn't provide");
+  // AI Sponsorship
+  addQ('Sponsorship', 'Tanmoy Mondal', '₹5 Lakh', '');
+  addQ('Sponsorship', 'Hepmade', '₹12 Lakh', '');
+  // Shopify Pivotee
+  addQ('Pivotee', 'IT Idol', '₹1 Lakh/month', 'Nilesh, Rohit selected', true);
+  // RPA
+  addQ('RPA', 'Tanmoy Mondal', '₹85k/month', 'Basil A');
+  // Python Azure
+  addQ('Ashok Kumar', 'Tanmoy Mondal', '₹85k/month', 'Anubhab');
+  addQ('Ashok Kumar', 'Tanmoy Mondal', '₹90k/month', 'Haris');
+  // SAP PP QM
+  addQ('SAP PP QM', 'Tanmoy Mondal', '₹1.10 LPM', 'Syed');
+  // Salesforce DevOps
+  addQ('Salesforce DevOps', 'Tanmoy Mondal', '₹1.45-1.65 LPM', 'Padma ₹1.45L, Santosh ₹1.65L, Pradeep ₹1.5L');
+  // Sukolpo
+  addQ('Sukolpo', 'Tanmoy Mondal', '₹1,200/hour', 'Kishan');
+  // Prabhat AI LLM
+  addQ('Prabhat', 'Tanmoy Mondal', '17,000 AED', '');
+  // Shopify March
+  addQ('Shopify Developer', 'Tanmoy Mondal', '₹1 Lakh/month', 'Kishan');
+  // AI Architect
+  addQ('AI Architect', 'Tanmoy Mondal', '₹95k/month', '');
+  // AI/ML Engineer Production
+  addQ('AI/ML Engineer', 'Tanmoy Mondal', '₹1.40 LPM', '');
+  // Swift SwiftUI
+  addQ('Swift/SwiftUI', 'Tanmoy Mondal', '—', '');
+  addQ('Swift/SwiftUI', 'LinkedIn', '₹1.20-1.50 LPM', 'Ritik ₹1.20L, Sadaf ₹1.50L');
+  // Full Stack React
+  addQ('Full Stack React', 'Tanmoy Mondal', '—', 'Basil A');
+  // Salesforce Onsite USA
+  addQ('Salesforce — Onsite', 'Dattu Marupaka', '20 LPA', 'Sireesha, Tavva, Anmol, Sekhar');
+  addQ('Salesforce — Onsite', 'Nirag Tech', '18 LPA', '');
+  // Full Stack Java Hyderabad
+  addQ('Java/React + QA', 'Tanmoy Mondal', '—', 'Akhil V (Java, Spring Boot, React)');
+  // GenAI
+  addQ('GenAI', 'Sai Madhu', '₹1,500/hour', '');
+  // Python React
+  addQ('Python + React', 'Tanmoy Mondal', '—', '');
+  addQ('Python + React', 'Hepmade', '—', '');
+  // Network Tableau Python
+  addQ('Network Engineer + Tableau', 'Tanmoy Mondal', '—', '');
+  // SAP Treasury
+  addQ('SAP Treasury', 'Snehal Singh', '₹1.5 LPM', '');
+  addQ('SAP Treasury', 'Tanmoy Mondal', '₹4.2 Lakh', 'Siva');
+  // Java Microservices
+  addQ('Java/React + QA + DevOps', 'Baljeet Singh', '₹1.60 LPM', '');
+  addQ('Java/React + QA + DevOps', 'Tanmoy Mondal', '₹1.25 LPM', 'Prabhat Kumar');
 }
