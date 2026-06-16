@@ -122,7 +122,7 @@ async function init() {
     const qc = await client.execute('SELECT COUNT(*) as c FROM quotations');
     const quoteCount = Number(qc.rows[0].c);
     console.log(`Current DB: ${vendorCount} vendors, ${reqCount} reqs, ${quoteCount} quotes`);
-    if (vendorCount < 70 || vendorCount > 80 || reqCount > 40 || reqCount < 30) {
+    if (vendorCount < 70 || vendorCount > 80 || reqCount > 40 || reqCount < 30 || quoteCount < 5) {
       console.log('Counts wrong — cleaning and reseeding...');
       await client.execute('DELETE FROM quotations');
       await client.execute('DELETE FROM requirements');
