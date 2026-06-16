@@ -10,8 +10,10 @@ function getTurso() {
   if (!process.env.TURSO_URL || !process.env.TURSO_TOKEN) return null;
   try {
     const { createClient } = require('@libsql/client');
+    // Use https:// URL to bypass migration job checks in newer libsql versions
+    const url = process.env.TURSO_URL.replace('libsql://', 'https://');
     tursoClient = createClient({
-      url: process.env.TURSO_URL,
+      url,
       authToken: process.env.TURSO_TOKEN,
     });
     console.log('Connected to Turso SQLite');
