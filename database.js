@@ -79,21 +79,43 @@ async function initTurso(client) {
 async function seedTurso(client) {
   const store = { requirements: [], vendors: [], quotations: [] };
   seedData(store);
-  // Seed vendors
+
+  // ── Vendors: upsert by name (not id) ──────────────────
+  // Clear all existing seed vendors and re-insert with correct data
+  await client.execute('DELETE FROM vendors');
   for (const v of store.vendors) {
-    try { await client.execute({ sql: 'INSERT OR IGNORE INTO vendors (id,name,company,email,tech,city,type,contact,blacklisted,blacklist_reason) VALUES (?,?,?,?,?,?,?,?,0,?)', args: [v.id,v.name,v.company,v.email,v.tech,v.city,v.type,v.contact,''] }); } catch(e) {}
+    try {
+      await client.execute({
+        sql: 'INSERT INTO vendors (id,name,company,email,tech,city,type,contact,blacklisted,blacklist_reason) VALUES (?,?,?,?,?,?,?,?,0,?)',
+        args: [v.id,v.name,v.company,v.email,v.tech,v.city,v.type,v.contact,'']
+      });
+    } catch(e) {}
   }
-  // Seed requirements
+
+  // ── Requirements: delete duplicates first, keep unique titles ──
+  // Remove all rows where title appears more than once (keep none — reseed all)
+  await client.execute('DELETE FROM requirements');
+  await client.execute('DELETE FROM quotations');
   for (const r of store.requirements) {
-    try { await client.execute({ sql: 'INSERT OR IGNORE INTO requirements (id,title,client,bdm,tech,type,status,date,description) VALUES (?,?,?,?,?,?,?,?,?)', args: [r.id,r.title,r.client,r.bdm,r.tech,r.type,r.status,r.date,r.description] }); } catch(e) {}
+    try {
+      await client.execute({
+        sql: 'INSERT INTO requirements (id,title,client,bdm,tech,type,status,date,description) VALUES (?,?,?,?,?,?,?,?,?)',
+        args: [r.id,r.title,r.client,r.bdm,r.tech,r.type,r.status,r.date,r.description]
+      });
+    } catch(e) {}
   }
-  // Seed quotations
   for (const q of store.quotations) {
-    try { await client.execute({ sql: 'INSERT OR IGNORE INTO quotations (id,requirement_id,vendor_name,amount,num_developers,hours,timeline,notes,is_winner) VALUES (?,?,?,?,?,?,?,?,?)', args: [q.id,q.requirement_id,q.vendor_name,q.amount,q.num_developers,q.hours,q.timeline,q.notes,q.is_winner?1:0] }); } catch(e) {}
+    try {
+      await client.execute({
+        sql: 'INSERT INTO quotations (id,requirement_id,vendor_name,amount,num_developers,hours,timeline,notes,is_winner) VALUES (?,?,?,?,?,?,?,?,?)',
+        args: [q.id,q.requirement_id,q.vendor_name,q.amount,q.num_developers,q.hours,q.timeline,q.notes,q.is_winner?1:0]
+      });
+    } catch(e) {}
   }
+
   const vCount = await client.execute('SELECT COUNT(*) as c FROM vendors');
   const rCount = await client.execute('SELECT COUNT(*) as c FROM requirements');
-  console.log(`Turso seeded: ${vCount.rows[0].c} vendors, ${rCount.rows[0].c} reqs`);
+  console.log(`Turso reseeded: ${vCount.rows[0].c} vendors, ${rCount.rows[0].c} reqs`);
 }
 
 // ── Public API ─────────────────────────────────────────────
