@@ -318,3 +318,38 @@ app.get('/api/analytics', (req, res) => {
     res.json({ vendorStats, bdmStats });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
+// ── BLACKLIST ─────────────────────────────────────────────
+app.patch('/api/vendors/:id/blacklist', (req, res) => {
+  try {
+    const { reason } = req.body;
+    const store = getStore();
+    if (store) {
+      const v = store.vendors.find(x => x.id === req.params.id);
+      if (!v) return res.status(404).json({ error: 'Not found' });
+      v.blacklisted = true;
+      v.blacklist_reason = reason || '';
+      v.blacklisted_at = new Date().toISOString();
+      return res.json(v);
+    }
+    dbRun('UPDATE vendors SET blacklisted=1, blacklist_reason=?, blacklisted_at=? WHERE id=?',
+      [reason||'', new Date().toISOString(), req.params.id]);
+    res.json(dbAll('SELECT * FROM vendors WHERE id=?', [req.params.id])[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.patch('/api/vendors/:id/unblacklist', (req, res) => {
+  try {
+    const store = getStore();
+    if (store) {
+      const v = store.vendors.find(x => x.id === req.params.id);
+      if (!v) return res.status(404).json({ error: 'Not found' });
+      v.blacklisted = false;
+      v.blacklist_reason = '';
+      v.blacklisted_at = null;
+      return res.json(v);
+    }
+    dbRun('UPDATE vendors SET blacklisted=0, blacklist_reason=NULL, blacklisted_at=NULL WHERE id=?', [req.params.id]);
+    res.json(dbAll('SELECT * FROM vendors WHERE id=?', [req.params.id])[0]);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
