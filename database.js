@@ -83,6 +83,7 @@ async function seedTurso(client) {
   // ── Vendors: upsert by name (not id) ──────────────────
   // Clear all existing seed vendors and re-insert with correct data
   await client.execute('DELETE FROM vendors');
+wait_=True #v5
   for (const v of store.vendors) {
     try {
       await client.execute({
@@ -329,3 +330,4 @@ function seedData(store) {
     { id:uuidv4(), requirement_id:store.requirements[1].id, vendor_name:'Tanmoy Mondal', amount:'₹1.40 LPM', num_developers:'1', hours:'—', timeline:'Ongoing', notes:'Profile: Proparna, notice 15 days', is_winner:true, created_at:new Date().toISOString() },
   );
 }
+// seed-version: 5.0
