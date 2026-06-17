@@ -269,6 +269,97 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 
+
+// ── SETTINGS ─────────────────────────────────────────────
+app.get('/api/settings', async (req, res) => {
+  try {
+    const rows = await query('SELECT key, value FROM _meta WHERE key LIKE ?', ['setting_%']);
+    const settings = {};
+    for (const row of rows) {
+      const key = row.key.replace('setting_', '');
+      // Mask sensitive values
+      if (['gmail_password','gmail_client_secret','gmail_refresh_token','gmail_access_token'].includes(key)) {
+        settings[key] = row.value ? '••••••••' : '';
+      } else {
+        settings[key] = row.value || '';
+      }
+    }
+    res.json(settings);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/settings/raw', async (req, res) => {
+  // Returns unmasked values for internal use only (email sending)
+  try {
+    const rows = await query('SELECT key, value FROM _meta WHERE key LIKE ?', ['setting_%']);
+    const settings = {};
+    for (const row of rows) settings[row.key.replace('setting_', '')] = row.value || '';
+    res.json(settings);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/settings', async (req, res) => {
+  try {
+    const allowed = [
+      'gmail_user', 'gmail_password', 'gmail_client_id', 'gmail_client_secret',
+      'gmail_refresh_token', 'gmail_access_token', 'gmail_auth_mode',
+      'company_name', 'company_email', 'company_phone', 'company_website',
+      'rfq_signature', 'rfq_cc', 'rfq_bcc',
+    ];
+    const saved = [];
+    for (const [key, value] of Object.entries(req.body)) {
+      if (!allowed.includes(key)) continue;
+      if (value === '••••••••') continue; // Don't overwrite masked values
+      const metaKey = 'setting_' + key;
+      await execute(
+        'INSERT INTO _meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
+        [metaKey, value]
+      );
+      saved.push(key);
+    }
+    res.json({ success: true, saved });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/settings/test-email', async (req, res) => {
+  try {
+    const rows = await query('SELECT key, value FROM _meta WHERE key LIKE ?', ['setting_%']);
+    const s = {};
+    for (const row of rows) s[row.key.replace('setting_', '')] = row.value || '';
+
+    if (!s.gmail_user) return res.status(400).json({ error: 'Gmail user not configured' });
+
+    const nodemailer = require('nodemailer');
+    let transporter;
+
+    if (s.gmail_auth_mode === 'password') {
+      transporter = nodemailer.createTransport({
+        service: 'gmail', auth: { user: s.gmail_user, pass: s.gmail_password }
+      });
+    } else {
+      transporter = nodemailer.createTransport({
+        service: 'gmail',
+        auth: {
+          type: 'OAuth2',
+          user: s.gmail_user,
+          clientId: s.gmail_client_id,
+          clientSecret: s.gmail_client_secret,
+          refreshToken: s.gmail_refresh_token,
+          accessToken: s.gmail_access_token || undefined,
+        }
+      });
+    }
+
+    await transporter.sendMail({
+      from: `"${s.company_name || 'Brainium'}" <${s.gmail_user}>`,
+      to: s.gmail_user,
+      subject: 'Brainium RFQ Portal — Test Email',
+      html: '<p>Your email setup is working correctly! 🎉</p><p>— Brainium Vendor Management Portal</p>'
+    });
+    res.json({ success: true, message: `Test email sent to ${s.gmail_user}` });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── BACKUP & RESTORE ─────────────────────────────────────
 app.get('/api/backup/export', async (req, res) => {
   try {
