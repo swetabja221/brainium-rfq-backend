@@ -1,7 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { query, execute, init, uuidv4 } = require('./database');
+const { query, execute, init, uuidv4, getTurso } = require('./database');
 
 const app = express();
 app.use(cors());
@@ -272,38 +272,21 @@ app.post('/api/auth/login', async (req, res) => {
 // ── BACKUP & RESTORE ─────────────────────────────────────
 app.get('/api/backup/export', async (req, res) => {
   try {
-    const client = getTurso();
-    if (!client) return res.status(503).json({ error: 'No database connected' });
-
-    const [vendors, requirements, quotations, rfq_emails, users] = await Promise.all([
-      client.execute('SELECT * FROM vendors'),
-      client.execute('SELECT * FROM requirements'),
-      client.execute('SELECT * FROM quotations'),
-      client.execute('SELECT * FROM rfq_emails'),
-      client.execute('SELECT id,name,email,role,active,created_at FROM users'),
+    const [vendors, requirements, quotations, rfq_emails] = await Promise.all([
+      query('SELECT * FROM vendors'),
+      query('SELECT * FROM requirements'),
+      query('SELECT * FROM quotations'),
+      query('SELECT * FROM rfq_emails'),
     ]);
-
-    const toArray = (result) => result.rows.map(row =>
-      Object.fromEntries(Object.entries(row).map(([k,v]) => [k, typeof v === 'bigint' ? Number(v) : v]))
-    );
+    // users separately — table may not exist on older deploys
+    let users = [];
+    try { users = await query('SELECT id,name,email,role,active,created_at FROM users'); } catch(e) {}
 
     const backup = {
       version: '1.0',
       exported_at: new Date().toISOString(),
-      counts: {
-        vendors: vendors.rows.length,
-        requirements: requirements.rows.length,
-        quotations: quotations.rows.length,
-        rfq_emails: rfq_emails.rows.length,
-        users: users.rows.length,
-      },
-      data: {
-        vendors: toArray(vendors),
-        requirements: toArray(requirements),
-        quotations: toArray(quotations),
-        rfq_emails: toArray(rfq_emails),
-        users: toArray(users),
-      }
+      counts: { vendors: vendors.length, requirements: requirements.length, quotations: quotations.length, rfq_emails: rfq_emails.length, users: users.length },
+      data: { vendors, requirements, quotations, rfq_emails, users }
     };
 
     const filename = `brainium-backup-${new Date().toISOString().slice(0,10)}.json`;
@@ -403,21 +386,20 @@ app.post('/api/backup/import', async (req, res) => {
 
 app.get('/api/backup/stats', async (req, res) => {
   try {
-    const client = getTurso();
-    if (!client) return res.status(503).json({ error: 'No database connected' });
-    const [v,r,q,e,u] = await Promise.all([
-      client.execute('SELECT COUNT(*) as c FROM vendors'),
-      client.execute('SELECT COUNT(*) as c FROM requirements'),
-      client.execute('SELECT COUNT(*) as c FROM quotations'),
-      client.execute('SELECT COUNT(*) as c FROM rfq_emails'),
-      client.execute('SELECT COUNT(*) as c FROM users'),
+    const [v,r,q,e] = await Promise.all([
+      query('SELECT COUNT(*) as c FROM vendors'),
+      query('SELECT COUNT(*) as c FROM requirements'),
+      query('SELECT COUNT(*) as c FROM quotations'),
+      query('SELECT COUNT(*) as c FROM rfq_emails'),
     ]);
+    let u = [{c:0}];
+    try { u = await query('SELECT COUNT(*) as c FROM users'); } catch(err) {}
     res.json({
-      vendors: Number(v.rows[0].c),
-      requirements: Number(r.rows[0].c),
-      quotations: Number(q.rows[0].c),
-      rfq_emails: Number(e.rows[0].c),
-      users: Number(u.rows[0].c),
+      vendors: Number(v[0]?.c||0),
+      requirements: Number(r[0]?.c||0),
+      quotations: Number(q[0]?.c||0),
+      rfq_emails: Number(e[0]?.c||0),
+      users: Number(u[0]?.c||0),
       checked_at: new Date().toISOString(),
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
