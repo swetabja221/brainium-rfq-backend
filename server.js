@@ -268,6 +268,161 @@ app.post('/api/auth/login', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+// ── BACKUP & RESTORE ─────────────────────────────────────
+app.get('/api/backup/export', async (req, res) => {
+  try {
+    const client = getTurso();
+    if (!client) return res.status(503).json({ error: 'No database connected' });
+
+    const [vendors, requirements, quotations, rfq_emails, users] = await Promise.all([
+      client.execute('SELECT * FROM vendors'),
+      client.execute('SELECT * FROM requirements'),
+      client.execute('SELECT * FROM quotations'),
+      client.execute('SELECT * FROM rfq_emails'),
+      client.execute('SELECT id,name,email,role,active,created_at FROM users'),
+    ]);
+
+    const toArray = (result) => result.rows.map(row =>
+      Object.fromEntries(Object.entries(row).map(([k,v]) => [k, typeof v === 'bigint' ? Number(v) : v]))
+    );
+
+    const backup = {
+      version: '1.0',
+      exported_at: new Date().toISOString(),
+      counts: {
+        vendors: vendors.rows.length,
+        requirements: requirements.rows.length,
+        quotations: quotations.rows.length,
+        rfq_emails: rfq_emails.rows.length,
+        users: users.rows.length,
+      },
+      data: {
+        vendors: toArray(vendors),
+        requirements: toArray(requirements),
+        quotations: toArray(quotations),
+        rfq_emails: toArray(rfq_emails),
+        users: toArray(users),
+      }
+    };
+
+    const filename = `brainium-backup-${new Date().toISOString().slice(0,10)}.json`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/json');
+    res.json(backup);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/backup/import', async (req, res) => {
+  try {
+    const client = getTurso();
+    if (!client) return res.status(503).json({ error: 'No database connected' });
+
+    const { data, version, mode = 'merge' } = req.body;
+    if (!data) return res.status(400).json({ error: 'No backup data provided' });
+
+    const results = { vendors: 0, requirements: 0, quotations: 0, rfq_emails: 0, users: 0, errors: [] };
+
+    // mode: 'merge' = INSERT OR IGNORE (keep existing), 'replace' = wipe and restore
+    if (mode === 'replace') {
+      await client.execute('DELETE FROM quotations');
+      await client.execute('DELETE FROM rfq_emails');
+      await client.execute('DELETE FROM requirements');
+      await client.execute('DELETE FROM vendors');
+      // Don't delete users in replace mode for safety
+    }
+
+    // Restore vendors
+    if (data.vendors) {
+      for (const v of data.vendors) {
+        try {
+          await client.execute({
+            sql: 'INSERT OR IGNORE INTO vendors (id,name,company,email,tech,city,type,contact,blacklisted,blacklist_reason,blacklisted_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+            args: [v.id,v.name,v.company||'',v.email||'',v.tech||'',v.city||'',v.type||'Company',v.contact||'',v.blacklisted||0,v.blacklist_reason||'',v.blacklisted_at||null,v.created_at||new Date().toISOString()]
+          });
+          results.vendors++;
+        } catch(e) { results.errors.push(`vendor ${v.name}: ${e.message}`); }
+      }
+    }
+
+    // Restore requirements
+    if (data.requirements) {
+      for (const r of data.requirements) {
+        try {
+          await client.execute({
+            sql: 'INSERT OR IGNORE INTO requirements (id,title,client,bdm,tech,type,status,date,description,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+            args: [r.id,r.title,r.client||'',r.bdm||'',r.tech||'',r.type||'FD',r.status||'Pending',r.date||'',r.description||'',r.created_at||new Date().toISOString()]
+          });
+          results.requirements++;
+        } catch(e) { results.errors.push(`req ${r.title}: ${e.message}`); }
+      }
+    }
+
+    // Restore quotations
+    if (data.quotations) {
+      for (const q of data.quotations) {
+        try {
+          await client.execute({
+            sql: 'INSERT OR IGNORE INTO quotations (id,requirement_id,vendor_id,vendor_name,amount,num_developers,hours,timeline,notes,is_winner,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+            args: [q.id,q.requirement_id,q.vendor_id||'',q.vendor_name||'',q.amount||'',q.num_developers||'1',q.hours||'',q.timeline||'',q.notes||'',q.is_winner||0,q.created_at||new Date().toISOString()]
+          });
+          results.quotations++;
+        } catch(e) { results.errors.push(`quote ${q.id}: ${e.message}`); }
+      }
+    }
+
+    // Restore rfq_emails
+    if (data.rfq_emails) {
+      for (const e of data.rfq_emails) {
+        try {
+          await client.execute({
+            sql: 'INSERT OR IGNORE INTO rfq_emails (id,requirement_id,vendor_emails,subject,body,status,attachment_name,error_message,sent_at) VALUES (?,?,?,?,?,?,?,?,?)',
+            args: [e.id,e.requirement_id||'',e.vendor_emails||'',e.subject||'',e.body||'',e.status||'',e.attachment_name||'',e.error_message||'',e.sent_at||new Date().toISOString()]
+          });
+          results.rfq_emails++;
+        } catch(e2) { results.errors.push(`email ${e.id}: ${e2.message}`); }
+      }
+    }
+
+    // Restore users (always merge, never wipe)
+    if (data.users) {
+      for (const u of data.users) {
+        try {
+          await client.execute({
+            sql: 'INSERT OR IGNORE INTO users (id,name,email,password,role,active,created_at) VALUES (?,?,?,?,?,?,?)',
+            args: [u.id,u.name||'',u.email,u.password||'changeme',u.role||'viewer',u.active!==undefined?u.active:1,u.created_at||new Date().toISOString()]
+          });
+          results.users++;
+        } catch(e) { results.errors.push(`user ${u.email}: ${e.message}`); }
+      }
+    }
+
+    res.json({ success: true, mode, restored: results });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/backup/stats', async (req, res) => {
+  try {
+    const client = getTurso();
+    if (!client) return res.status(503).json({ error: 'No database connected' });
+    const [v,r,q,e,u] = await Promise.all([
+      client.execute('SELECT COUNT(*) as c FROM vendors'),
+      client.execute('SELECT COUNT(*) as c FROM requirements'),
+      client.execute('SELECT COUNT(*) as c FROM quotations'),
+      client.execute('SELECT COUNT(*) as c FROM rfq_emails'),
+      client.execute('SELECT COUNT(*) as c FROM users'),
+    ]);
+    res.json({
+      vendors: Number(v.rows[0].c),
+      requirements: Number(r.rows[0].c),
+      quotations: Number(q.rows[0].c),
+      rfq_emails: Number(e.rows[0].c),
+      users: Number(u.rows[0].c),
+      checked_at: new Date().toISOString(),
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── SYNC (stub) ───────────────────────────────────────────
 app.post('/api/sync/sheets', async (req, res) => {
   res.json({ mock: true, message: 'Google Sheets sync not configured' });
