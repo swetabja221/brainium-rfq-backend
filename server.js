@@ -311,10 +311,13 @@ app.post('/api/settings', async (req, res) => {
       if (!allowed.includes(key)) continue;
       if (value === '••••••••') continue; // Don't overwrite masked values
       const metaKey = 'setting_' + key;
-      await execute(
-        'INSERT INTO _meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-        [metaKey, value]
-      );
+      // Try update first, then insert if not exists
+      const existing = await query('SELECT key FROM _meta WHERE key=?', [metaKey]);
+      if (existing.length > 0) {
+        await execute('UPDATE _meta SET value=? WHERE key=?', [value, metaKey]);
+      } else {
+        await execute('INSERT INTO _meta (key,value) VALUES (?,?)', [metaKey, value]);
+      }
       saved.push(key);
     }
     res.json({ success: true, saved });
@@ -327,7 +330,7 @@ app.post('/api/settings/test-email', async (req, res) => {
     const s = {};
     for (const row of rows) s[row.key.replace('setting_', '')] = row.value || '';
 
-    if (!s.gmail_user) return res.status(400).json({ error: 'Gmail user not configured' });
+    if (!s.gmail_user) return res.status(400).json({ error: 'Gmail not configured. Please fill in Gmail Address and App Password in Settings and click Save first.' });
 
     const nodemailer = require('nodemailer');
     let transporter;
