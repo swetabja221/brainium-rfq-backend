@@ -315,12 +315,12 @@ app.post('/api/backup/import', async (req, res) => {
       // Don't delete users in replace mode for safety
     }
 
-    // Restore vendors
+    // Restore vendors — safe upsert by id (INSERT OR REPLACE updates if exists)
     if (data.vendors) {
       for (const v of data.vendors) {
         try {
           await client.execute({
-            sql: 'INSERT OR IGNORE INTO vendors (id,name,company,email,tech,city,type,contact,blacklisted,blacklist_reason,blacklisted_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
+            sql: 'INSERT OR REPLACE INTO vendors (id,name,company,email,tech,city,type,contact,blacklisted,blacklist_reason,blacklisted_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
             args: [v.id,v.name,v.company||'',v.email||'',v.tech||'',v.city||'',v.type||'Company',v.contact||'',v.blacklisted||0,v.blacklist_reason||'',v.blacklisted_at||null,v.created_at||new Date().toISOString()]
           });
           results.vendors++;
@@ -328,12 +328,12 @@ app.post('/api/backup/import', async (req, res) => {
       }
     }
 
-    // Restore requirements
+    // Restore requirements — safe upsert by id
     if (data.requirements) {
       for (const r of data.requirements) {
         try {
           await client.execute({
-            sql: 'INSERT OR IGNORE INTO requirements (id,title,client,bdm,tech,type,status,date,description,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
+            sql: 'INSERT OR REPLACE INTO requirements (id,title,client,bdm,tech,type,status,date,description,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)',
             args: [r.id,r.title,r.client||'',r.bdm||'',r.tech||'',r.type||'FD',r.status||'Pending',r.date||'',r.description||'',r.created_at||new Date().toISOString()]
           });
           results.requirements++;
@@ -341,12 +341,12 @@ app.post('/api/backup/import', async (req, res) => {
       }
     }
 
-    // Restore quotations
+    // Restore quotations — safe upsert by id
     if (data.quotations) {
       for (const q of data.quotations) {
         try {
           await client.execute({
-            sql: 'INSERT OR IGNORE INTO quotations (id,requirement_id,vendor_id,vendor_name,amount,num_developers,hours,timeline,notes,is_winner,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+            sql: 'INSERT OR REPLACE INTO quotations (id,requirement_id,vendor_id,vendor_name,amount,num_developers,hours,timeline,notes,is_winner,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
             args: [q.id,q.requirement_id,q.vendor_id||'',q.vendor_name||'',q.amount||'',q.num_developers||'1',q.hours||'',q.timeline||'',q.notes||'',q.is_winner||0,q.created_at||new Date().toISOString()]
           });
           results.quotations++;
