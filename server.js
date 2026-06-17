@@ -273,11 +273,13 @@ app.post('/api/auth/login', async (req, res) => {
 // ── SETTINGS ─────────────────────────────────────────────
 app.get('/api/settings', async (req, res) => {
   try {
-    const rows = await query('SELECT key, value FROM _meta WHERE key LIKE ?', ['setting_%']);
+    const client = getTurso();
+    if (!client) return res.json({});
+    await client.execute(`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)`);
+    const result = await client.execute("SELECT key, value FROM _meta WHERE key LIKE 'setting_%'");
     const settings = {};
-    for (const row of rows) {
-      const key = row.key.replace('setting_', '');
-      // Mask sensitive values
+    for (const row of result.rows) {
+      const key = String(row.key).replace('setting_', '');
       if (['gmail_password','gmail_client_secret','gmail_refresh_token','gmail_access_token'].includes(key)) {
         settings[key] = row.value ? '••••••••' : '';
       } else {
@@ -289,17 +291,24 @@ app.get('/api/settings', async (req, res) => {
 });
 
 app.get('/api/settings/raw', async (req, res) => {
-  // Returns unmasked values for internal use only (email sending)
   try {
-    const rows = await query('SELECT key, value FROM _meta WHERE key LIKE ?', ['setting_%']);
+    const client = getTurso();
+    if (!client) return res.json({});
+    const result = await client.execute("SELECT key, value FROM _meta WHERE key LIKE 'setting_%'");
     const settings = {};
-    for (const row of rows) settings[row.key.replace('setting_', '')] = row.value || '';
+    for (const row of result.rows) settings[String(row.key).replace('setting_', '')] = row.value || '';
     res.json(settings);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/settings', async (req, res) => {
   try {
+    const client = getTurso();
+    if (!client) return res.status(503).json({ error: 'No database connected' });
+
+    // Ensure _meta table exists
+    await client.execute(`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)`);
+
     const allowed = [
       'gmail_user', 'gmail_password', 'gmail_client_id', 'gmail_client_secret',
       'gmail_refresh_token', 'gmail_access_token', 'gmail_auth_mode',
@@ -309,15 +318,9 @@ app.post('/api/settings', async (req, res) => {
     const saved = [];
     for (const [key, value] of Object.entries(req.body)) {
       if (!allowed.includes(key)) continue;
-      if (value === '••••••••') continue; // Don't overwrite masked values
+      if (value === '••••••••') continue;
       const metaKey = 'setting_' + key;
-      // Try update first, then insert if not exists
-      const existing = await query('SELECT key FROM _meta WHERE key=?', [metaKey]);
-      if (existing.length > 0) {
-        await execute('UPDATE _meta SET value=? WHERE key=?', [value, metaKey]);
-      } else {
-        await execute('INSERT INTO _meta (key,value) VALUES (?,?)', [metaKey, value]);
-      }
+      await client.execute({ sql: 'INSERT OR REPLACE INTO _meta (key,value) VALUES (?,?)', args: [metaKey, String(value)] });
       saved.push(key);
     }
     res.json({ success: true, saved });
@@ -326,9 +329,11 @@ app.post('/api/settings', async (req, res) => {
 
 app.post('/api/settings/test-email', async (req, res) => {
   try {
-    const rows = await query('SELECT key, value FROM _meta WHERE key LIKE ?', ['setting_%']);
+    const client = getTurso();
+    if (!client) return res.status(503).json({ error: 'No database connected' });
+    const result = await client.execute("SELECT key, value FROM _meta WHERE key LIKE 'setting_%'");
     const s = {};
-    for (const row of rows) s[row.key.replace('setting_', '')] = row.value || '';
+    for (const row of result.rows) s[String(row.key).replace('setting_', '')] = row.value || '';
 
     if (!s.gmail_user) return res.status(400).json({ error: 'Gmail not configured. Please fill in Gmail Address and App Password in Settings and click Save first.' });
 
