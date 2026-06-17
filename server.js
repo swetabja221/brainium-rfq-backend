@@ -193,32 +193,50 @@ app.get('/api/email-log', async (req, res) => {
 // ── SEND RFQ ──────────────────────────────────────────────
 app.post('/api/send-rfq', async (req, res) => {
   try {
-    const { requirement_id, vendor_ids, subject, body, attachment_name } = req.body;
-    const allVendors = await query('SELECT * FROM vendors WHERE blacklisted=0');
-    const selected = allVendors.filter(v => vendor_ids.includes(v.id) && v.email);
-    const vendorEmails = selected.map(v => v.email);
-    let emailResult = { success: false, message: 'Gmail not configured' };
-
-    if (process.env.GMAIL_USER && process.env.GMAIL_CLIENT_ID && process.env.GMAIL_REFRESH_TOKEN) {
+    // Load email settings from DB
+    const client = getTurso();
+    let emailSettings = {};
+    if (client) {
       try {
-        const nodemailer = require('nodemailer');
-        const { google } = require('googleapis');
-        const oauth2Client = new google.auth.OAuth2(process.env.GMAIL_CLIENT_ID, process.env.GMAIL_CLIENT_SECRET, 'https://developers.google.com/oauthplayground');
-        oauth2Client.setCredentials({ refresh_token: process.env.GMAIL_REFRESH_TOKEN });
-        const { token } = await oauth2Client.getAccessToken();
-        const transporter = nodemailer.createTransport({ service: 'gmail', auth: { type: 'OAuth2', user: process.env.GMAIL_USER, clientId: process.env.GMAIL_CLIENT_ID, clientSecret: process.env.GMAIL_CLIENT_SECRET, refreshToken: process.env.GMAIL_REFRESH_TOKEN, accessToken: token } });
-        await transporter.sendMail({ from: process.env.GMAIL_USER, bcc: vendorEmails.join(','), subject: subject || 'RFQ from Brainium', text: body || '' });
-        emailResult = { success: true, sent_to: vendorEmails };
-      } catch(emailErr) {
-        emailResult = { success: false, message: emailErr.message };
+        const settingResult = await client.execute("SELECT key, value FROM _meta WHERE key LIKE 'setting_%'");
+        for (const row of settingResult.rows) emailSettings[String(row.key).replace('setting_', '')] = row.value || '';
+      } catch(e) {}
+    }
+
+    const { requirementId, vendorEmails, subject, body, attachmentName } = req.body;
+    if (!vendorEmails || vendorEmails.length === 0) return res.status(400).json({ error: 'No vendor emails provided' });
+
+    let emailsSent = 0, errors = [];
+
+    if (!emailSettings.gmail_user) {
+      // Log attempt even without email config
+      const logId = uuidv4();
+      await execute('INSERT INTO rfq_emails (id,requirement_id,vendor_emails,subject,body,status,attachment_name,error_message) VALUES (?,?,?,?,?,?,?,?)',
+        [logId, requirementId||'', JSON.stringify(vendorEmails), subject||'', body||'', 'failed', attachmentName||'', 'Gmail not configured in Settings']);
+      return res.status(400).json({ error: 'Gmail not configured. Go to Admin → Settings to set up email.' });
+    }
+
+    // Send to each vendor
+    for (const email of vendorEmails) {
+      try {
+        const cc = emailSettings.rfq_cc || '';
+        const bcc = emailSettings.rfq_bcc || '';
+        const signature = emailSettings.rfq_signature || '';
+        const fullBody = body + (signature ? `<br><br>--<br>${signature}` : '');
+        await sendViaGmailAPI(emailSettings, email, subject, fullBody);
+        emailsSent++;
+      } catch(e) {
+        errors.push({ email, error: e.message });
       }
     }
 
+    // Log to DB
     const logId = uuidv4();
+    const status = errors.length === 0 ? 'sent' : emailsSent > 0 ? 'partial' : 'failed';
     await execute('INSERT INTO rfq_emails (id,requirement_id,vendor_emails,subject,body,status,attachment_name,error_message) VALUES (?,?,?,?,?,?,?,?)',
-      [logId, requirement_id||'', vendorEmails.join(','), subject||'', body||'', emailResult.success?'sent':'failed', attachment_name||'', emailResult.message||'']);
+      [logId, requirementId||'', JSON.stringify(vendorEmails), subject||'', body||'', status, attachmentName||'', errors.length ? JSON.stringify(errors) : '']);
 
-    res.json({ ...emailResult, logged: true });
+    res.json({ success: emailsSent > 0, sent: emailsSent, failed: errors.length, errors });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -327,6 +345,69 @@ app.post('/api/settings', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// Helper: send email via Gmail API (works on Render — no SMTP needed)
+async function sendViaGmailAPI(settings, to, subject, htmlBody) {
+  const { gmail_user, gmail_password, gmail_auth_mode, gmail_client_id, gmail_client_secret, gmail_refresh_token } = settings;
+
+  let accessToken;
+
+  if (gmail_auth_mode === 'oauth2') {
+    // Get fresh access token using refresh token
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id: gmail_client_id,
+        client_secret: gmail_client_secret,
+        refresh_token: gmail_refresh_token,
+        grant_type: 'refresh_token',
+      })
+    }).then(r => r.json());
+    if (!tokenRes.access_token) throw new Error('OAuth2 token error: ' + (tokenRes.error_description || tokenRes.error));
+    accessToken = tokenRes.access_token;
+  } else {
+    // App Password — use Basic Auth with Gmail API
+    // Gmail API requires OAuth2, so use nodemailer with TLS on port 587
+    const nodemailer = require('nodemailer');
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      auth: { user: gmail_user, pass: gmail_password.replace(/\s/g, '') },
+      tls: { rejectUnauthorized: false },
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 15000,
+    });
+    await transporter.sendMail({
+      from: `"${settings.company_name || 'Brainium'}" <${gmail_user}>`,
+      to, subject, html: htmlBody
+    });
+    return;
+  }
+
+  // OAuth2 path — use Gmail REST API
+  const message = [
+    `From: "${settings.company_name || 'Brainium'}" <${gmail_user}>`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    `MIME-Version: 1.0`,
+    `Content-Type: text/html; charset=utf-8`,
+    ``,
+    htmlBody
+  ].join('\r\n');
+
+  const encoded = Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+  const sendRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/send`, {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw: encoded })
+  }).then(r => r.json());
+
+  if (sendRes.error) throw new Error(sendRes.error.message || JSON.stringify(sendRes.error));
+}
+
 app.post('/api/settings/test-email', async (req, res) => {
   try {
     const client = getTurso();
@@ -335,35 +416,12 @@ app.post('/api/settings/test-email', async (req, res) => {
     const s = {};
     for (const row of result.rows) s[String(row.key).replace('setting_', '')] = row.value || '';
 
-    if (!s.gmail_user) return res.status(400).json({ error: 'Gmail not configured. Please fill in Gmail Address and App Password in Settings and click Save first.' });
+    if (!s.gmail_user) return res.status(400).json({ error: 'Gmail not configured. Save settings first.' });
+    if (!s.gmail_password && s.gmail_auth_mode !== 'oauth2') return res.status(400).json({ error: 'App Password not configured. Save settings first.' });
 
-    const nodemailer = require('nodemailer');
-    let transporter;
-
-    if (s.gmail_auth_mode === 'password') {
-      transporter = nodemailer.createTransport({
-        service: 'gmail', auth: { user: s.gmail_user, pass: s.gmail_password }
-      });
-    } else {
-      transporter = nodemailer.createTransport({
-        service: 'gmail',
-        auth: {
-          type: 'OAuth2',
-          user: s.gmail_user,
-          clientId: s.gmail_client_id,
-          clientSecret: s.gmail_client_secret,
-          refreshToken: s.gmail_refresh_token,
-          accessToken: s.gmail_access_token || undefined,
-        }
-      });
-    }
-
-    await transporter.sendMail({
-      from: `"${s.company_name || 'Brainium'}" <${s.gmail_user}>`,
-      to: s.gmail_user,
-      subject: 'Brainium RFQ Portal — Test Email',
-      html: '<p>Your email setup is working correctly! 🎉</p><p>— Brainium Vendor Management Portal</p>'
-    });
+    await sendViaGmailAPI(s, s.gmail_user, 'Brainium RFQ Portal — Test Email',
+      '<div style="font-family:Arial,sans-serif;padding:20px"><h2 style="color:#1a2b5e">✅ Email setup working!</h2><p>Your Brainium Vendor Management Portal email is configured correctly.</p><p style="color:#6b7a9e;font-size:12px">— Brainium RFQ Portal</p></div>'
+    );
     res.json({ success: true, message: `Test email sent to ${s.gmail_user}` });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
