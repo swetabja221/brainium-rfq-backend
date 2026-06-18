@@ -358,7 +358,7 @@ app.post('/api/settings', async (req, res) => {
       'gmail_user', 'gmail_password', 'gmail_client_id', 'gmail_client_secret',
       'gmail_refresh_token', 'gmail_access_token', 'gmail_auth_mode',
       'company_name', 'company_email', 'company_phone', 'company_website',
-      'rfq_signature', 'rfq_cc', 'rfq_bcc', 'resend_api_key', 'resend_domain_verified', 'rfq_to_email', 'rfq_reply_to', 'rfq_email_template',
+      'rfq_signature', 'rfq_cc', 'rfq_bcc', 'resend_api_key', 'resend_domain_verified', 'rfq_to_email', 'rfq_reply_to', 'rfq_email_template', 'brevo_api_key',
     ];
     const saved = [];
     for (const [key, value] of Object.entries(req.body)) {
@@ -372,31 +372,58 @@ app.post('/api/settings', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Helper: send email via Resend API (HTTP-based, works on Render free tier)
+// Helper: send email via Brevo API (HTTPS, works on Render free tier)
 async function sendEmail(settings, to, subject, htmlBody, options = {}) {
+  const brevoKey = settings.brevo_api_key || process.env.BREVO_API_KEY;
   const resendKey = settings.resend_api_key || process.env.RESEND_API_KEY;
-  const fromEmail = settings.gmail_user || settings.company_email || 'noreply@brainiuminfotech.com';
+  const gmailUser = settings.gmail_user || '';
   const fromName = settings.company_name || 'Brainium IT Solutions';
+  const replyTo = options.reply_to || settings.rfq_reply_to || gmailUser;
 
-  if (resendKey) {
-    // Use Resend API
-    // If domain not verified, send from onboarding@resend.dev with reply-to
-    // If domain verified, send from own email
-    const domainVerified = settings.resend_domain_verified === 'true';
-    const senderEmail = domainVerified
-      ? `${fromName} <${fromEmail}>`
-      : `Brainium IT Solutions <onboarding@resend.dev>`;
-
+  // 1. Try Brevo first (recommended — works on Render, send from own email)
+  if (brevoKey) {
+    const toList = Array.isArray(to) ? to : [to];
     const payload = {
-      from: senderEmail,
+      sender: { name: fromName, email: gmailUser || 'swetabja@brainiuminfotech.com' },
+      to: toList.map(e => ({ email: e })),
+      subject,
+      htmlContent: htmlBody,
+      replyTo: { email: replyTo || gmailUser },
+    };
+    if (options.bcc && options.bcc.length) {
+      payload.bcc = options.bcc.map(e => ({ email: e }));
+    }
+    if (options.cc) {
+      payload.cc = [{ email: options.cc }];
+    }
+
+    const res = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'api-key': brevoKey,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || JSON.stringify(data));
+    return data;
+  }
+
+  // 2. Try Resend (requires domain verification for other recipients)
+  if (resendKey) {
+    const domainVerified = settings.resend_domain_verified === 'true';
+    const fromEmail = domainVerified ? gmailUser : 'onboarding@resend.dev';
+    const payload = {
+      from: `${fromName} <${fromEmail}>`,
       to: Array.isArray(to) ? to : [to],
       subject,
       html: htmlBody,
-      reply_to: fromEmail || settings.gmail_user,
+      reply_to: replyTo,
     };
-    // Add bcc if provided
-    if (options && options.bcc && options.bcc.length) payload.bcc = options.bcc;
-    if (options && options.cc) payload.cc = options.cc;
+    if (options.bcc && options.bcc.length) payload.bcc = options.bcc;
+    if (options.cc) payload.cc = options.cc;
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -408,20 +435,8 @@ async function sendEmail(settings, to, subject, htmlBody, options = {}) {
     return data;
   }
 
-  // Fallback: Gmail SMTP via nodemailer (may not work on Render free tier)
-  const nodemailer = require('nodemailer');
-  const pass = (settings.gmail_password || '').replace(/\s/g, '');
-  if (!pass) throw new Error('No email service configured. Add a Resend API key in Settings.');
-
-  const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com', port: 587, secure: false,
-    auth: { user: settings.gmail_user, pass },
-    tls: { rejectUnauthorized: false },
-    connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 10000,
-  });
-  return transporter.sendMail({ from: `"${fromName}" <${settings.gmail_user}>`, to, subject, html: htmlBody });
+  throw new Error('No email service configured. Add Brevo API key in Settings.');
 }
-
 
 app.post('/api/settings/test-email', async (req, res) => {
   try {
