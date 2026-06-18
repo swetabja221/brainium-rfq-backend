@@ -331,7 +331,7 @@ app.post('/api/settings', async (req, res) => {
       'gmail_user', 'gmail_password', 'gmail_client_id', 'gmail_client_secret',
       'gmail_refresh_token', 'gmail_access_token', 'gmail_auth_mode',
       'company_name', 'company_email', 'company_phone', 'company_website',
-      'rfq_signature', 'rfq_cc', 'rfq_bcc', 'resend_api_key',
+      'rfq_signature', 'rfq_cc', 'rfq_bcc', 'resend_api_key', 'resend_domain_verified',
     ];
     const saved = [];
     for (const [key, value] of Object.entries(req.body)) {
@@ -352,11 +352,23 @@ async function sendEmail(settings, to, subject, htmlBody) {
   const fromName = settings.company_name || 'Brainium IT Solutions';
 
   if (resendKey) {
-    // Use Resend API (recommended — works on Render free tier)
+    // Use Resend API — if own domain not verified yet, use shared domain
+    const senderEmail = settings.resend_domain_verified === 'true'
+      ? `${fromName} <${fromEmail}>`
+      : `${fromName} <onboarding@resend.dev>`;
+
+    const payload = {
+      from: senderEmail,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      html: htmlBody,
+      reply_to: fromEmail // replies go to real email
+    };
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: `${fromName} <${fromEmail}>`, to: Array.isArray(to) ? to : [to], subject, html: htmlBody })
+      body: JSON.stringify(payload)
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || data.name || JSON.stringify(data));
