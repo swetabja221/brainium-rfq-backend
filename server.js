@@ -223,7 +223,7 @@ app.post('/api/send-rfq', async (req, res) => {
         const bcc = emailSettings.rfq_bcc || '';
         const signature = emailSettings.rfq_signature || '';
         const fullBody = body + (signature ? `<br><br>--<br>${signature}` : '');
-        await sendViaGmailAPI(emailSettings, email, subject, fullBody);
+        await sendEmail(emailSettings, email, subject, fullBody);
         emailsSent++;
       } catch(e) {
         errors.push({ email, error: e.message });
@@ -331,7 +331,7 @@ app.post('/api/settings', async (req, res) => {
       'gmail_user', 'gmail_password', 'gmail_client_id', 'gmail_client_secret',
       'gmail_refresh_token', 'gmail_access_token', 'gmail_auth_mode',
       'company_name', 'company_email', 'company_phone', 'company_website',
-      'rfq_signature', 'rfq_cc', 'rfq_bcc',
+      'rfq_signature', 'rfq_cc', 'rfq_bcc', 'resend_api_key',
     ];
     const saved = [];
     for (const [key, value] of Object.entries(req.body)) {
@@ -345,68 +345,38 @@ app.post('/api/settings', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Helper: send email via Gmail API (works on Render — no SMTP needed)
-async function sendViaGmailAPI(settings, to, subject, htmlBody) {
-  const { gmail_user, gmail_password, gmail_auth_mode, gmail_client_id, gmail_client_secret, gmail_refresh_token } = settings;
+// Helper: send email via Resend API (HTTP-based, works on Render free tier)
+async function sendEmail(settings, to, subject, htmlBody) {
+  const resendKey = settings.resend_api_key || process.env.RESEND_API_KEY;
+  const fromEmail = settings.gmail_user || settings.company_email || 'noreply@brainiuminfotech.com';
+  const fromName = settings.company_name || 'Brainium IT Solutions';
 
-  let accessToken;
-
-  if (gmail_auth_mode === 'oauth2') {
-    // Get fresh access token using refresh token
-    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+  if (resendKey) {
+    // Use Resend API (recommended — works on Render free tier)
+    const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        client_id: gmail_client_id,
-        client_secret: gmail_client_secret,
-        refresh_token: gmail_refresh_token,
-        grant_type: 'refresh_token',
-      })
-    }).then(r => r.json());
-    if (!tokenRes.access_token) throw new Error('OAuth2 token error: ' + (tokenRes.error_description || tokenRes.error));
-    accessToken = tokenRes.access_token;
-  } else {
-    // App Password — use Basic Auth with Gmail API
-    // Gmail API requires OAuth2, so use nodemailer with TLS on port 587
-    const nodemailer = require('nodemailer');
-    const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
-      auth: { user: gmail_user, pass: gmail_password.replace(/\s/g, '') },
-      tls: { rejectUnauthorized: false },
-      connectionTimeout: 15000,
-      greetingTimeout: 15000,
-      socketTimeout: 15000,
+      headers: { 'Authorization': `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: `${fromName} <${fromEmail}>`, to: Array.isArray(to) ? to : [to], subject, html: htmlBody })
     });
-    await transporter.sendMail({
-      from: `"${settings.company_name || 'Brainium'}" <${gmail_user}>`,
-      to, subject, html: htmlBody
-    });
-    return;
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || data.name || JSON.stringify(data));
+    return data;
   }
 
-  // OAuth2 path — use Gmail REST API
-  const message = [
-    `From: "${settings.company_name || 'Brainium'}" <${gmail_user}>`,
-    `To: ${to}`,
-    `Subject: ${subject}`,
-    `MIME-Version: 1.0`,
-    `Content-Type: text/html; charset=utf-8`,
-    ``,
-    htmlBody
-  ].join('\r\n');
+  // Fallback: Gmail SMTP via nodemailer (may not work on Render free tier)
+  const nodemailer = require('nodemailer');
+  const pass = (settings.gmail_password || '').replace(/\s/g, '');
+  if (!pass) throw new Error('No email service configured. Add a Resend API key in Settings.');
 
-  const encoded = Buffer.from(message).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-  const sendRes = await fetch(`https://gmail.googleapis.com/gmail/v1/users/me/messages/send`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ raw: encoded })
-  }).then(r => r.json());
-
-  if (sendRes.error) throw new Error(sendRes.error.message || JSON.stringify(sendRes.error));
+  const transporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com', port: 587, secure: false,
+    auth: { user: settings.gmail_user, pass },
+    tls: { rejectUnauthorized: false },
+    connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 10000,
+  });
+  return transporter.sendMail({ from: `"${fromName}" <${settings.gmail_user}>`, to, subject, html: htmlBody });
 }
+
 
 app.post('/api/settings/test-email', async (req, res) => {
   try {
@@ -417,9 +387,9 @@ app.post('/api/settings/test-email', async (req, res) => {
     for (const row of result.rows) s[String(row.key).replace('setting_', '')] = row.value || '';
 
     if (!s.gmail_user) return res.status(400).json({ error: 'Gmail not configured. Save settings first.' });
-    if (!s.gmail_password && s.gmail_auth_mode !== 'oauth2') return res.status(400).json({ error: 'App Password not configured. Save settings first.' });
+    if (!s.resend_api_key && !s.gmail_password && !process.env.RESEND_API_KEY) return res.status(400).json({ error: 'No email configured. Add Resend API key in Settings.' });
 
-    await sendViaGmailAPI(s, s.gmail_user, 'Brainium RFQ Portal — Test Email',
+    await sendEmail(s, s.gmail_user, 'Brainium RFQ Portal — Test Email',
       '<div style="font-family:Arial,sans-serif;padding:20px"><h2 style="color:#1a2b5e">✅ Email setup working!</h2><p>Your Brainium Vendor Management Portal email is configured correctly.</p><p style="color:#6b7a9e;font-size:12px">— Brainium RFQ Portal</p></div>'
     );
     res.json({ success: true, message: `Test email sent to ${s.gmail_user}` });
@@ -447,9 +417,47 @@ app.get('/api/backup/export', async (req, res) => {
     };
 
     const filename = `brainium-backup-${new Date().toISOString().slice(0,10)}.json`;
+
+    // Log backup history
+    try {
+      const client = getTurso();
+      if (client) {
+        await client.execute(`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)`);
+        // Store last 10 backups as a JSON array
+        const histRow = await client.execute("SELECT value FROM _meta WHERE key='backup_history'");
+        let history = [];
+        if (histRow.rows.length > 0) {
+          try { history = JSON.parse(histRow.rows[0].value); } catch(e) {}
+        }
+        history.unshift({
+          date: new Date().toISOString(),
+          filename,
+          counts: backup.counts
+        });
+        history = history.slice(0, 10); // keep last 10
+        await client.execute({
+          sql: "INSERT OR REPLACE INTO _meta (key,value) VALUES ('backup_history',?)",
+          args: [JSON.stringify(history)]
+        });
+      }
+    } catch(e) { /* don't fail export if logging fails */ }
+
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.setHeader('Content-Type', 'application/json');
     res.json(backup);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+
+app.get('/api/backup/history', async (req, res) => {
+  try {
+    const client = getTurso();
+    if (!client) return res.json([]);
+    await client.execute(`CREATE TABLE IF NOT EXISTS _meta (key TEXT PRIMARY KEY, value TEXT)`);
+    const row = await client.execute("SELECT value FROM _meta WHERE key='backup_history'");
+    if (!row.rows.length) return res.json([]);
+    const history = JSON.parse(row.rows[0].value || '[]');
+    res.json(history);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
