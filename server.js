@@ -229,22 +229,37 @@ app.post('/api/send-rfq', async (req, res) => {
       return res.status(400).json({ error: 'Email not configured. Go to Admin → Settings to set up Resend.' });
     }
 
-    // Send to each vendor
+    // Send ONE email with all vendors in BCC for privacy
     const signature = emailSettings.rfq_signature || '';
-    const fullBody = (body||'') + (signature ? `<br><br>--<br>${signature}` : '');
+    const fullBody = (body||'') + (signature ? '<br><br>--<br>' + signature : '');
 
-    for (const email of resolvedEmails) {
-      try {
-        await sendEmail(emailSettings, email, subject||'RFQ from Brainium', fullBody);
-        emailsSent++;
-      } catch(e) {
-        errors.push({ email, error: e.message });
-      }
+    // To: address from settings (visible recipient), vendors go in BCC
+    const toEmail = emailSettings.rfq_to_email || emailSettings.gmail_user || resolvedEmails[0];
+    const replyTo = emailSettings.rfq_reply_to || emailSettings.gmail_user || toEmail;
+    const ccEmail = emailSettings.rfq_cc || '';
+    const extraBcc = emailSettings.rfq_bcc || '';
+
+    // Build BCC list: all vendor emails + optional extra BCC
+    const bccList = [...resolvedEmails];
+    if (extraBcc && !bccList.includes(extraBcc)) bccList.push(extraBcc);
+
+    // Override reply_to and from in settings temporarily
+    const sendSettings = { ...emailSettings, gmail_user: replyTo };
+
+    try {
+      await sendEmail(sendSettings, toEmail, subject || 'RFQ from Brainium', fullBody, {
+        bcc: bccList,
+        cc: ccEmail || undefined,
+        reply_to: replyTo
+      });
+      emailsSent = resolvedEmails.length;
+    } catch(e) {
+      errors.push({ email: 'all', error: e.message });
     }
 
     // Log to DB
     const logId = uuidv4();
-    const status = errors.length === 0 ? 'sent' : emailsSent > 0 ? 'partial' : 'failed';
+    const status = errors.length === 0 ? 'sent' : 'failed';
     await execute('INSERT INTO rfq_emails (id,requirement_id,vendor_emails,subject,body,status,attachment_name,error_message) VALUES (?,?,?,?,?,?,?,?)',
       [logId, reqId, JSON.stringify(resolvedEmails), subject||'', body||'', status, attName, errors.length ? JSON.stringify(errors) : '']);
 
@@ -343,7 +358,7 @@ app.post('/api/settings', async (req, res) => {
       'gmail_user', 'gmail_password', 'gmail_client_id', 'gmail_client_secret',
       'gmail_refresh_token', 'gmail_access_token', 'gmail_auth_mode',
       'company_name', 'company_email', 'company_phone', 'company_website',
-      'rfq_signature', 'rfq_cc', 'rfq_bcc', 'resend_api_key', 'resend_domain_verified',
+      'rfq_signature', 'rfq_cc', 'rfq_bcc', 'resend_api_key', 'resend_domain_verified', 'rfq_to_email', 'rfq_reply_to', 'rfq_email_template',
     ];
     const saved = [];
     for (const [key, value] of Object.entries(req.body)) {
@@ -358,24 +373,30 @@ app.post('/api/settings', async (req, res) => {
 });
 
 // Helper: send email via Resend API (HTTP-based, works on Render free tier)
-async function sendEmail(settings, to, subject, htmlBody) {
+async function sendEmail(settings, to, subject, htmlBody, options = {}) {
   const resendKey = settings.resend_api_key || process.env.RESEND_API_KEY;
   const fromEmail = settings.gmail_user || settings.company_email || 'noreply@brainiuminfotech.com';
   const fromName = settings.company_name || 'Brainium IT Solutions';
 
   if (resendKey) {
-    // Use Resend API — if own domain not verified yet, use shared domain
-    const senderEmail = settings.resend_domain_verified === 'true'
+    // Use Resend API
+    // If domain not verified, send from onboarding@resend.dev with reply-to
+    // If domain verified, send from own email
+    const domainVerified = settings.resend_domain_verified === 'true';
+    const senderEmail = domainVerified
       ? `${fromName} <${fromEmail}>`
-      : `${fromName} <onboarding@resend.dev>`;
+      : `Brainium IT Solutions <onboarding@resend.dev>`;
 
     const payload = {
       from: senderEmail,
       to: Array.isArray(to) ? to : [to],
       subject,
       html: htmlBody,
-      reply_to: fromEmail // replies go to real email
+      reply_to: fromEmail || settings.gmail_user,
     };
+    // Add bcc if provided
+    if (options && options.bcc && options.bcc.length) payload.bcc = options.bcc;
+    if (options && options.cc) payload.cc = options.cc;
 
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
