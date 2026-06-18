@@ -203,27 +203,39 @@ app.post('/api/send-rfq', async (req, res) => {
       } catch(e) {}
     }
 
-    const { requirementId, vendorEmails, subject, body, attachmentName } = req.body;
-    if (!vendorEmails || vendorEmails.length === 0) return res.status(400).json({ error: 'No vendor emails provided' });
+    const { requirementId, requirement_id, vendorEmails, vendor_ids, subject, body, attachmentName, attachment_name } = req.body;
+    const reqId = requirementId || requirement_id || '';
+    const attName = attachmentName || attachment_name || '';
+
+    // Resolve vendor emails from vendor_ids if provided
+    let resolvedEmails = vendorEmails || [];
+    if (vendor_ids && vendor_ids.length > 0) {
+      const allVendors = await query('SELECT id, email, name FROM vendors WHERE blacklisted=0');
+      resolvedEmails = allVendors
+        .filter(v => vendor_ids.includes(v.id) && v.email && v.email.trim())
+        .map(v => v.email.trim());
+    }
+
+    if (!resolvedEmails || resolvedEmails.length === 0) {
+      return res.status(400).json({ error: 'No vendor emails found. Make sure selected vendors have email addresses.' });
+    }
 
     let emailsSent = 0, errors = [];
 
-    if (!emailSettings.gmail_user) {
-      // Log attempt even without email config
+    if (!emailSettings.resend_api_key && !emailSettings.gmail_user) {
       const logId = uuidv4();
       await execute('INSERT INTO rfq_emails (id,requirement_id,vendor_emails,subject,body,status,attachment_name,error_message) VALUES (?,?,?,?,?,?,?,?)',
-        [logId, requirementId||'', JSON.stringify(vendorEmails), subject||'', body||'', 'failed', attachmentName||'', 'Gmail not configured in Settings']);
-      return res.status(400).json({ error: 'Gmail not configured. Go to Admin → Settings to set up email.' });
+        [logId, reqId, JSON.stringify(resolvedEmails), subject||'', body||'', 'failed', attName, 'Email not configured in Settings']);
+      return res.status(400).json({ error: 'Email not configured. Go to Admin → Settings to set up Resend.' });
     }
 
     // Send to each vendor
-    for (const email of vendorEmails) {
+    const signature = emailSettings.rfq_signature || '';
+    const fullBody = (body||'') + (signature ? `<br><br>--<br>${signature}` : '');
+
+    for (const email of resolvedEmails) {
       try {
-        const cc = emailSettings.rfq_cc || '';
-        const bcc = emailSettings.rfq_bcc || '';
-        const signature = emailSettings.rfq_signature || '';
-        const fullBody = body + (signature ? `<br><br>--<br>${signature}` : '');
-        await sendEmail(emailSettings, email, subject, fullBody);
+        await sendEmail(emailSettings, email, subject||'RFQ from Brainium', fullBody);
         emailsSent++;
       } catch(e) {
         errors.push({ email, error: e.message });
@@ -234,9 +246,9 @@ app.post('/api/send-rfq', async (req, res) => {
     const logId = uuidv4();
     const status = errors.length === 0 ? 'sent' : emailsSent > 0 ? 'partial' : 'failed';
     await execute('INSERT INTO rfq_emails (id,requirement_id,vendor_emails,subject,body,status,attachment_name,error_message) VALUES (?,?,?,?,?,?,?,?)',
-      [logId, requirementId||'', JSON.stringify(vendorEmails), subject||'', body||'', status, attachmentName||'', errors.length ? JSON.stringify(errors) : '']);
+      [logId, reqId, JSON.stringify(resolvedEmails), subject||'', body||'', status, attName, errors.length ? JSON.stringify(errors) : '']);
 
-    res.json({ success: emailsSent > 0, sent: emailsSent, failed: errors.length, errors });
+    res.json({ success: emailsSent > 0, sent: emailsSent, total: resolvedEmails.length, failed: errors.length, errors });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
