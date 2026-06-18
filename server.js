@@ -233,9 +233,10 @@ app.post('/api/send-rfq', async (req, res) => {
     const signature = emailSettings.rfq_signature || '';
     const fullBody = (body||'') + (signature ? '<br><br>--<br>' + signature : '');
 
-    // To: address from settings (visible recipient), vendors go in BCC
-    const toEmail = emailSettings.rfq_to_email || emailSettings.gmail_user || resolvedEmails[0];
-    const replyTo = emailSettings.rfq_reply_to || emailSettings.gmail_user || toEmail;
+    // To: sender's own email (visible), vendors go in BCC for privacy
+    const senderEmail = emailSettings.gmail_user || emailSettings.rfq_reply_to;
+    const toEmail = senderEmail || resolvedEmails[0];
+    const replyTo = emailSettings.rfq_reply_to || senderEmail || toEmail;
     const ccEmail = emailSettings.rfq_cc || '';
     const extraBcc = emailSettings.rfq_bcc || '';
 
